@@ -22,14 +22,45 @@ from routes.auth import get_current_user
 
 router = APIRouter(prefix="/api/sql", tags=["SQL Practice"])
 
-def get_duckdb_conn(user_id: str, session_id: str):
-    conn = duckdb.connect(database=f'db_{user_id}.duckdb')
-    return conn
 
 from models import Session as DBSession, Schema as DBSchema
 
 # @router.post('/get-explanation', response_model=ExplanationRequest)
 # (No implementation provided in original code)
+
+
+import threading
+# This code sets up a simple in-memory cache (dictionary) to store DuckDB database connections,
+# keyed by (user_id, session_id) tuples, so that each user/session pair gets a persistent connection.
+# The threading.Lock ensures that access to the cache is thread-safe.
+_duckdb_conn_cache = {}
+_duckdb_conn_lock = threading.Lock()
+
+def get_duckdb_conn(user_id: str, session_id: str):
+    """
+    Returns a persistent DuckDB connection for the given user_id and session_id.
+    Ensures the same connection object is returned for repeated calls.
+    """
+    key = (user_id, session_id)
+    db_filename = f'db_{user_id}.duckdb'
+    with _duckdb_conn_lock:
+        conn = _duckdb_conn_cache.get(key)
+        if conn is not None:
+            try:
+                # Check if connection is still alive
+                conn.execute("SELECT 1")
+                return conn
+            except Exception:
+                # Connection is dead, remove from cache
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                _duckdb_conn_cache.pop(key, None)
+        # Create new connection and cache it
+        conn = duckdb.connect(database=db_filename)
+        _duckdb_conn_cache[key] = conn
+        return conn
 
 @router.post("/create-session")
 async def create_session(
@@ -174,11 +205,16 @@ async def check_correct(
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user)
 ):
-    conn = get_duckdb_conn(user_id=request.user_id, session_id=request.session_id)
+    try:
+        conn = get_duckdb_conn(user_id=request.user_id, session_id=request.session_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="DuckDB connection not found for the given user/session")
+    
     table_head = ""
     points = 0
     try:
         # Try to execute the SQL and fetch a result
+        
         result_df = conn.execute(request.sql).fetch_df().head(10)
         table_head = result_df.to_markdown()
         is_executable = True
@@ -297,13 +333,34 @@ async def populate_tables(
             for row in tables
         }
 
-        if not all(count > 1 for count in counts.values()):
-            raise HTTPException(status_code=400, detail=f"Not all tables have more than 1 rows: {counts}")
+        if not all(count > 10 for count in counts.values()):
+            raise HTTPException(status_code=400, detail=f"Not all tables have more than 50 rows: {counts}")
 
         return {"message": "Successfully populated tables!"}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)[:100])
+    
+
+@router.post("/delete-duckdb")
+async def delete_duckdb(user_id):
+    """
+    Remove all tables from the user's DuckDB database.
+    This will drop all tables but will not delete the DuckDB file itself.
+    """
+    db_filename = f'db_{user_id}.duckdb'
+
+    conn = duckdb.connect(database=db_filename)
+    try:
+        tables = conn.execute("SHOW TABLES").fetchall()
+        for row in tables:
+            table_name = row[0]
+            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    finally:
+        conn.close()
+    return {"message": "All tables deleted successfully from DuckDB file."}
+
+
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
