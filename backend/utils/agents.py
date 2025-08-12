@@ -98,6 +98,7 @@ class basic_questions_gen(dspy.Signature):
     - Return a single string with the 5 questions separated by commas.
     - Questions should be clearly worded and directly related to the schema.
     - Seperate questions by , don't use that anywhere else except for seperation
+      - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
@@ -124,6 +125,7 @@ class intermediate_questions_gen(dspy.Signature):
     - Return a single string with the 5 questions separated by commas.
     - Questions should be clearly worded, relevant to the schema, and encourage deeper understanding of SQL logic.
      - Seperate questions by , don't use that anywhere else except for seperation
+       - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
@@ -150,6 +152,7 @@ class hard_questions_gen(dspy.Signature):
     - Return a single string with the 5 questions separated by commas.
     - Questions should be challenging, realistic, and require multiple steps to solve.
      - Seperate questions by , don't use that anywhere else except for seperation
+     - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")

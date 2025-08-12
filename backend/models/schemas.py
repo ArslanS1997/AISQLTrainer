@@ -127,19 +127,25 @@ class SessionResponse(BaseModel):
 # COMPETITION SCHEMAS
 # ============================================================================
 
+class Competition(BaseModel):
+    competition_id: str
+    schema_id: Optional[str] = None
+    difficulty: Optional[str] = None
+    time_limit: Optional[int] = None
+    started_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 class CompetitionStartRequest(BaseModel):
     difficulty: str = "beginner"
     time_limit: int = 300  # seconds
 
-class CompetitionStartResponse(BaseModel):
-    competition_id: str
-    schema_id: str
+class CompetitionStartResponse(Competition):
     time_limit: int
     started_at: datetime
     expires_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class CompetitionSubmitRequest(BaseModel):
     competition_id: str
@@ -152,16 +158,12 @@ class CompetitionSubmitResponse(BaseModel):
     rank: Optional[int] = None
     feedback: str
 
-class CompetitionHistoryResponse(BaseModel):
-    competition_id: str
+class CompetitionHistoryResponse(Competition):
     score: int
     rank: int
     time_taken: int
     completed_at: datetime
     difficulty: str
-
-    class Config:
-        from_attributes = True
 
 # ============================================================================
 # DASHBOARD SCHEMAS
