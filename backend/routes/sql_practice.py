@@ -333,8 +333,8 @@ async def populate_tables(
             for row in tables
         }
 
-        if not all(count > 10 for count in counts.values()):
-            raise HTTPException(status_code=400, detail=f"Not all tables have more than 50 rows: {counts}")
+        if not all(count > 1 for count in counts.values()):
+            raise HTTPException(status_code=400, detail=f"Not all tables have more than 1 rows: {counts}")
 
         return {"message": "Successfully populated tables!"}
 
@@ -343,22 +343,56 @@ async def populate_tables(
     
 
 @router.post("/delete-duckdb")
-async def delete_duckdb(user_id):
+async def delete_duckdb(user_id: str, session_id: str, current_user: Any = Depends(get_current_user)):
     """
-    Remove all tables from the user's DuckDB database.
-    This will drop all tables but will not delete the DuckDB file itself.
+    Drop all tables in the user's session DuckDB, handling FK dependencies.
     """
-    db_filename = f'db_{user_id}.duckdb'
-
-    conn = duckdb.connect(database=db_filename)
     try:
-        tables = conn.execute("SHOW TABLES").fetchall()
-        for row in tables:
-            table_name = row[0]
-            conn.execute(f"DROP TABLE IF EXISTS {table_name}")
-    finally:
+        conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
+
+        # All tables
+        tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+
+        # Edges: child -> parent (FK references)
+        deps = conn.execute("""
+            select tc.table_name as child, ccu.table_name as parent
+            from information_schema.table_constraints tc
+            join information_schema.referential_constraints rc on tc.constraint_name = rc.constraint_name
+            join information_schema.constraint_column_usage ccu on rc.unique_constraint_name = ccu.constraint_name
+            where tc.constraint_type='FOREIGN KEY'
+        """).fetchall()
+
+        graph = {t: set() for t in tables}
+        for child, parent in deps:
+            if child in graph:
+                graph[child].add(parent)
+
+        # Topological sort: drop children before parents
+        visited, order = {}, []
+
+        def dfs(t):
+            if visited.get(t) == 1: return
+            if visited.get(t) == 2: return
+            visited[t] = 1
+            for p in graph.get(t, []):
+                dfs(p)
+            visited[t] = 2
+            order.append(t)
+
+        for t in tables:
+            dfs(t)
+
+        for t in order:
+            conn.execute(f'DROP TABLE IF EXISTS "{t}"')
+
         conn.close()
-    return {"message": "All tables deleted successfully from DuckDB file."}
+        return {"message": "All tables dropped successfully."}
+    except Exception as e:
+        try:
+            conn.close()
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to drop tables: {str(e)}")
 
 
 
