@@ -277,7 +277,8 @@ async def check_correct(
             "basic": 5,
             "intermediate": 10,
             "advanced": 20
-        }.get(request.difficulty, 10)
+        }
+        points = points*difficulty_multiplier[request.difficulty.lower()]
 
     except Exception as e:
         is_executable = False
@@ -289,6 +290,7 @@ async def check_correct(
         )
         explanation = response.explanation
         points = 0
+        raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
 
     # Insert the result into the session's queries in the DB
     db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
@@ -300,7 +302,8 @@ async def check_correct(
             "is_correct": is_correct,
             "explanation": explanation,
             "table_head": table_head,
-            "points": points*difficulty_multiplier[request.difficulty.lower()],
+            "points": points,
+            "difficulty":request.difficulty,
             "checked_at": datetime.utcnow().isoformat()
         })
         db_session.queries = queries
@@ -317,7 +320,8 @@ async def check_correct(
         is_correct=is_correct,
         explanation=explanation,
         table_head=table_head,
-        points=points
+        points=points,
+        difficulty=request.difficulty  # Add this line
     )
 
 
@@ -393,7 +397,7 @@ async def populate_tables(
         return {"message": "Successfully populated tables!"}
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)[:100])
+        raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)+ f"{str(code)} ")
     
 
 @router.post("/delete-duckdb")

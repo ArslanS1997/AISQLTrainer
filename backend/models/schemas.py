@@ -80,6 +80,7 @@ class PopulateRequest(BaseModel):
 class CheckCorrectRequest(BaseModel):
     user_id: str
     session_id: str 
+    difficulty: str
     question: str
     sql: str
 
@@ -90,6 +91,7 @@ class CheckCorrectResponse(BaseModel):
     explanation: str
     table_head: str
     points: int
+    difficulty: str
 
 class QuestionRequest(BaseModel):
     user_id: str

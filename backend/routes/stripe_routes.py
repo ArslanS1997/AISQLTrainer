@@ -78,14 +78,21 @@ async def get_user_subscription(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    service = SubscriptionService(db)
-    plan = service.get_user_plan(current_user.id)
-    usage = service.get_user_usage(current_user.id)
-    
-    return {
-        'plan': plan,
-        'usage': usage
-    }
+    try:
+        service = SubscriptionService(db)
+        plan = service.get_user_plan(current_user.id)
+        usage = service.get_user_usage(current_user.id)
+        return {
+            'plan': plan,
+            'usage': usage
+        }
+    except Exception as e:
+        usage = {
+            'schemas_generated': 0,
+            'competitions_entered': 0
+        }
+        return {'plan':os.environ('SET_MY_DEFAULT_PLAN'), 'usage':usage}
+        raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
 
 @router.get("/feature-check/{feature}")
 async def check_feature_access(

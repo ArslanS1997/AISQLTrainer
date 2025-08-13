@@ -6,6 +6,7 @@ Handles Google OAuth and user session management.
 from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any, Optional
+import os
 
 from models.schemas import GoogleAuthRequest, UserResponse, SuccessResponse
 from utils.auth import verify_google_token, create_access_token, get_user_from_token
@@ -172,11 +173,23 @@ async def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db))
 @router.post("/logout", response_model=SuccessResponse)
 async def logout(current_user: User = Depends(get_current_user)):
     """
-    Logout current user. Invalidate JWT/session.
+    Logout current user. Invalidate JWT/session and delete user's DuckDB file.
     """
-    # In a stateless JWT system, logout is handled on the client side by deleting the token.
-    # Optionally, you could implement token blacklisting here.
-    return {"success": True, "message": "Logged out successfully."}
+
+    # Path to the user's DuckDB file (adjust path as needed)
+    duckdb_dir = os.getenv("USER_DUCKDB_DIR", "user_dbs")
+    duckdb_file = os.path.join(duckdb_dir, f"{current_user.id}.duckdb")
+
+    # Attempt to delete the DuckDB file if it exists
+    try:
+        if os.path.exists(duckdb_file):
+            os.remove(duckdb_file)
+    except Exception as e:
+        # Log error but do not fail logout
+        import logging
+        logging.error(f"Failed to delete DuckDB file for user {current_user.id}: {e}")
+
+    return {"success": True, "message": "Logged out successfully and user database deleted."}
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
