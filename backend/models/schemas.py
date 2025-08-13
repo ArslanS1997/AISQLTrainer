@@ -29,13 +29,21 @@ class UserResponse(BaseModel):
 # class Agents(BaseModel):
 #     generate_schema = 
 
+class SessionCreationRequest(BaseModel):
+    user_id: str
+    session_id: str
+    schema_script: str
+    difficulty: str
+
 class PopSuccess(BaseModel):
     message:str
 
+
 class SQLSchemaRequest(BaseModel):
     user_id: str
-    session_id:str
+    session_id: str
     prompt: str
+    difficulty: str = "basic"  
 
 class SQLSchemaResponse(BaseModel):
     user_id: str

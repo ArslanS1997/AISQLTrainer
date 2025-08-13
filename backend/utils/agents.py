@@ -1,4 +1,9 @@
 import dspy
+from typing import List
+from services.subscription_service import SubscriptionService
+from sqlalchemy.orm import Session
+
+
 
 class create_schema(dspy.Signature):
     """
@@ -16,6 +21,12 @@ class create_schema(dspy.Signature):
 
     Your are using duckDB SQL, which is based on SQLite
     - DO NOT TRY to add foreign_key etc relationships
+    - DONOT USE ORDER OR OTHER RESERVED KEYWORDS IN SQL FOR TABLENAMES/COLUMN NAMES LIKE
+     all,analyse,analyze,and,any,array,as,asc,asymmetric,both,case,cast,check,collate,column,constraint,create,default,
+     deferrable,desc,describe,distinct,do,else,end,except,false,fetch,for,foreign,from,group,having,in,initially,intersect,
+     into,lambda,lateral,leading,limit,not,null,offset,on,only,or,order,pivot,pivot_longer,pivot_wider,placing,primary,
+     qualify,references,returning,select,show,some,summarize,symmetric,table,then,to,trailing,true,union,unique,unpivot,
+     using,variadic,when,where,window,with
     
     
     """
@@ -95,14 +106,14 @@ class basic_questions_gen(dspy.Signature):
         - Limiting output with LIMIT
 
     Format:
-    - Return a single string with the 5 questions separated by commas.
+    - Generate a List[str] of 5 questions
     - Questions should be clearly worded and directly related to the schema.
-    - Seperate questions by , don't use that anywhere else except for seperation
+    -
       - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions = dspy.OutputField(desc="5 questions separated by commas for basic difficulty")
+    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for basic difficulty")
 
 class intermediate_questions_gen(dspy.Signature):
     """
@@ -122,14 +133,14 @@ class intermediate_questions_gen(dspy.Signature):
         - Filtering with IN, BETWEEN, or LIKE
 
     Format:
-    - Return a single string with the 5 questions separated by commas.
+    - Generate a List[str] of 5 questions
     - Questions should be clearly worded, relevant to the schema, and encourage deeper understanding of SQL logic.
      - Seperate questions by , don't use that anywhere else except for seperation
        - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions = dspy.OutputField(desc="5 questions separated by commas for intermediate difficulty")
+    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for intermediate difficulty")
 
 class hard_questions_gen(dspy.Signature):
     """
@@ -149,14 +160,14 @@ class hard_questions_gen(dspy.Signature):
         - Advanced set operations like INTERSECT, EXCEPT
 
     Format:
-    - Return a single string with the 5 questions separated by commas.
+    - Generate a List[str] of 5 questions
     - Questions should be challenging, realistic, and require multiple steps to solve.
-     - Seperate questions by , don't use that anywhere else except for seperation
      - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
+    
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions = dspy.OutputField(desc="5 questions separated by commas for hard difficulty")
+    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for hard difficulty")
 
 
 class question_generator(dspy.Module):
@@ -228,4 +239,14 @@ populate_table_agent = dspy.asyncify(dspy.Predict(populate_table))
 question_generator_agent = dspy.asyncify(question_generator())
 explanation_gen_agent = dspy.asyncify(dspy.Predict(explanation_gen))
 check_correct_agent = dspy.asyncify(dspy.Predict(check_answer))
+
+async def get_ai_model_for_user(user_id: str, db: Session) -> str:
+    subscription_service = SubscriptionService(db)
+    plan = subscription_service.get_user_plan(user_id)
+    return plan["ai_model_tier"]
+
+async def question_generator_agent(schema: str, difficulty: str, topic: str):
+    # Get appropriate model based on user's subscription
+    model = await get_ai_model_for_user(user_id, db)
+    # Use model in your OpenAI/AI calls
 

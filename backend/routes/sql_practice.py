@@ -12,13 +12,16 @@ import uuid
 import duckdb
 # import os
 import faker
+import re
 from routes.auth import get_db
 
 from models.schemas import (
     SQLSchemaRequest, SQLSchemaResponse, SQLExecuteRequest, SQLExecuteResponse,
-    SessionResponse, PopulateRequest, QuestionRequest, QuestionResponse, PopSuccess, CheckCorrectRequest, CheckCorrectResponse
+    SessionResponse, PopulateRequest, QuestionRequest, QuestionResponse, PopSuccess, CheckCorrectRequest, CheckCorrectResponse,
+    SessionCreationRequest
 )
 from routes.auth import get_current_user
+from services.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/api/sql", tags=["SQL Practice"])
 
@@ -64,7 +67,7 @@ def get_duckdb_conn(user_id: str, session_id: str):
 
 @router.post("/create-session")
 async def create_session(
-    request: dict,
+    request: SessionCreationRequest,
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user)
 ):
@@ -77,9 +80,9 @@ async def create_session(
     # --- END AUTH DEBUGGING ---
     try:
         user_id = current_user.id
-        session_id = request.get("session_id")
-        schema_script = request.get("schema_script")
-        difficulty = request.get("difficulty")
+        session_id = request.session_id
+        schema_script = request.schema_script
+        difficulty = request.difficulty
 
         if not all([user_id, session_id, schema_script, difficulty]):
             raise HTTPException(status_code=400, detail="Missing required fields")
@@ -105,6 +108,7 @@ async def create_session(
             schema_id=schema_id,
             queries=[],
             total_score=0,
+            difficulty=request.difficulty,  # Add this line
             created_at=created_at,
             completed_at=None
         )
@@ -128,24 +132,28 @@ async def create_session(
 @router.post("/question-generator", response_model=QuestionResponse)
 async def generate_question(
     request: QuestionRequest,
+    db = Depends(get_db),
     current_user: Any = Depends(get_current_user)
 ):
     # --- AUTH DEBUGGING ---
-    # --- END AUTH DEBUGGING ---
+
+    if not hasattr(request, "user_id"):
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
     try:
+
+
         response = await question_generator_agent(
             schema=request.schema_ddl,
             difficulty=request.difficulty,
             topic=request.topic
         )
-        questions_list = [q.strip() for q in response.questions.split(",")]
-        return {
-            "user_id": request.user_id,
-            "session_id": request.session_id,
-            "questions": questions_list
-        }
+        questions_list = response.questions
+        return {'user_id':request.user_id, "session_id":request.session_id, "questions":questions_list}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)}")
+        # db.rollback()
+        raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
 
 
 @router.post("/generate-schema", response_model=SQLSchemaResponse)
@@ -156,6 +164,8 @@ async def generate_schema(
 ):
     """
     Generate schema, store in DB, associate with user.
+
+
     """
     # --- AUTH DEBUGGING ---
     if not current_user or not getattr(current_user, "id", None):
@@ -169,7 +179,14 @@ async def generate_schema(
 
         created_at = datetime.utcnow().replace(microsecond=0)
         conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
-        conn.execute(response.schema_sql)
+        # Remove all existing tables before creating the new schema
+        existing_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+        for table in existing_tables:
+            try:
+                conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
+            except Exception:
+                pass  # Ignore errors if table cannot be dropped
+        conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
         tables = conn.execute("SHOW TABLES").fetchall()
         table_names = [row[0] for row in tables]
         schema_created = len(table_names) > 0
@@ -187,6 +204,7 @@ async def generate_schema(
         db.commit()
         db.refresh(db_schema)
 
+        # returner = 
         return SQLSchemaResponse(
             user_id=user_id,
             session_id=session_id,
@@ -196,7 +214,11 @@ async def generate_schema(
         )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)} + {str(request)} + {str(dict(user_id=user_id,
+        session_id=session_id,
+        schema_script=response.schema_sql
+  )
+)}")
     
 
 @router.post("/iscorrect", response_model=CheckCorrectResponse)
@@ -255,6 +277,11 @@ async def check_correct(
             "checked_at": datetime.utcnow().isoformat()
         })
         db_session.queries = queries
+        
+        # Calculate and update total score
+        total_score = sum(q.get("points", 0) for q in queries if isinstance(q, dict))
+        db_session.total_score = total_score
+        
         db.commit()
 
     return CheckCorrectResponse(

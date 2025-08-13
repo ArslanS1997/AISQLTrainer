@@ -3,7 +3,7 @@ Competition routes for SQL Tutor AI backend.
 Handles SQL competitions, submissions, and leaderboards.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 
 from models.schemas import (
@@ -11,6 +11,10 @@ from models.schemas import (
     CompetitionSubmitResponse, CompetitionHistoryResponse
 )
 from routes.auth import get_current_user
+from services.subscription_service import SubscriptionService
+from routes.auth import get_db
+from models.schemas import SQLSchemaRequest, SQLSchemaResponse
+from routes.achievements import check_master_certificate_eligibility
 
 router = APIRouter(prefix="/api/competition", tags=["Competition"])
 
@@ -71,3 +75,32 @@ async def get_active_competitions(current_user: Dict[str, Any] = Depends(get_cur
     """
     # TODO: Query DB for active competitions
     pass 
+
+@router.post("/enter-competition")
+async def enter_competition(
+    request: CompetitionStartRequest,
+    db=Depends(get_db),
+    current_user: Any = Depends(get_current_user)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Check subscription limits
+    subscription_service = SubscriptionService(db)
+    feature_check = subscription_service.can_use_feature(current_user.id, "competition")
+    
+    if not feature_check["allowed"]:
+        raise HTTPException(
+            status_code=403, 
+            detail=feature_check["reason"]
+        )
+    
+    try:
+        # ... existing competition code ...
+        
+        # Increment usage after successfully entering
+        subscription_service.increment_usage(current_user.id, "competition")
+        
+        return {"status": "success", "message": "Successfully entered competition"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) 
