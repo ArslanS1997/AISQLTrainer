@@ -22,12 +22,12 @@ class create_schema(dspy.Signature):
     Your are using duckDB SQL, which is based on SQLite
     - DO NOT TRY to add foreign_key etc relationships
     - DONOT USE ORDER OR OTHER RESERVED KEYWORDS IN SQL FOR TABLENAMES/COLUMN NAMES LIKE
-     all,analyse,analyze,and,any,array,as,asc,asymmetric,both,case,cast,check,collate,column,constraint,create,default,
-     deferrable,desc,describe,distinct,do,else,end,except,false,fetch,for,foreign,from,group,having,in,initially,intersect,
-     into,lambda,lateral,leading,limit,not,null,offset,on,only,or,order,pivot,pivot_longer,pivot_wider,placing,primary,
-     qualify,references,returning,select,show,some,summarize,symmetric,table,then,to,trailing,true,union,unique,unpivot,
-     using,variadic,when,where,window,with
-    
+            all,analyse,analyze,and,any,array,as,asc,asymmetric,both,case,cast,check,collate,column,constraint,create,default,
+            deferrable,desc,describe,distinct,do,else,end,except,false,fetch,for,foreign,from,group,having,in,initially,intersect,
+            into,lambda,lateral,leading,limit,not,null,offset,on,only,or,order,pivot,pivot_longer,pivot_wider,placing,primary,
+            qualify,references,returning,select,show,some,summarize,symmetric,table,then,to,trailing,true,union,unique,unpivot,
+            using,variadic,when,where,window,with
+            
     
     """
     user_prompt = dspy.InputField(desc="The prompt the user has given on what schema they want you to generate")
@@ -46,7 +46,8 @@ class populate_table(dspy.Signature):
     - Uses parameterized queries to avoid SQL injection and ensure clean formatting.
     - No need to import duckdb or connect it is already connected as conn
     - Do not do conn = duckdb.connect(), it is already connected
-    - Take care of the foreign key relations, ensuring you add in good sequence!
+    - Take care of the foreign key relations, ensuring you add in good sequences
+    - TAKE CARE OF NON_NULL CONSTRAINT ALWAYS ADD DATA IN THAT COLUMN
 
     Do not return anything except the Python code.
 
@@ -240,13 +241,8 @@ question_generator_agent = dspy.asyncify(question_generator())
 explanation_gen_agent = dspy.asyncify(dspy.Predict(explanation_gen))
 check_correct_agent = dspy.asyncify(dspy.Predict(check_answer))
 
-async def get_ai_model_for_user(user_id: str, db: Session) -> str:
-    subscription_service = SubscriptionService(db)
-    plan = subscription_service.get_user_plan(user_id)
-    return plan["ai_model_tier"]
 
-async def question_generator_agent(schema: str, difficulty: str, topic: str):
-    # Get appropriate model based on user's subscription
-    model = await get_ai_model_for_user(user_id, db)
+
+
     # Use model in your OpenAI/AI calls
 

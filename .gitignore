@@ -1,0 +1,27 @@
+# Python virtual environments
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+
+# Environment files
+.env
+
+# Frontend environment files
+frontend/.env
+
+# Backend environment files
+backend/.env
+
+# Frontend virtual environments and cache
+frontend/venv/
+frontend/.venv/
+frontend/__pycache__/
+
+# Backend virtual environments and cache
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+
+backend/*.duckdb

@@ -129,31 +129,6 @@ async def create_session(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"create_session error: {str(e)}")
 
-@router.post("/question-generator", response_model=QuestionResponse)
-async def generate_question(
-    request: QuestionRequest,
-    db = Depends(get_db),
-    current_user: Any = Depends(get_current_user)
-):
-    # --- AUTH DEBUGGING ---
-
-    if not hasattr(request, "user_id"):
-        raise HTTPException(status_code=400, detail="Missing user_id in request")
-
-    try:
-
-
-        response = await question_generator_agent(
-            schema=request.schema_ddl,
-            difficulty=request.difficulty,
-            topic=request.topic
-        )
-        questions_list = response.questions
-        return {'user_id':request.user_id, "session_id":request.session_id, "questions":questions_list}
-
-    except Exception as e:
-        # db.rollback()
-        raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
 
 
 @router.post("/generate-schema", response_model=SQLSchemaResponse)
@@ -176,6 +151,10 @@ async def generate_schema(
         user_id = current_user.id
         session_id = request.session_id
         response = await create_schema_agent(user_prompt=request.prompt)
+
+        # Check for reserved keywords in table or column names and add 's' if found
+
+        response.schema_sql = response.schema_sql.replace("Order","Orders")
 
         created_at = datetime.utcnow().replace(microsecond=0)
         conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
@@ -219,7 +198,50 @@ async def generate_schema(
         schema_script=response.schema_sql
   )
 )}")
-    
+
+# @router.post("/question-generator", response_model=QuestionResponse)
+# async def generate_question(
+#     request: QuestionRequest,
+#     db = Depends(get_db),
+#     current_user: Any = Depends(get_current_user)
+# ):
+#     # --- AUTH DEBUGGING ---
+
+#     if not hasattr(request, "user_id"):
+#         raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+#     try:
+
+
+#         response = await question_generator_agent(
+#             schema=request.schema_ddl,
+#             difficulty=request.difficulty,
+#             topic=request.topic
+#         )
+#         questions_list = response.questions
+#         return {'user_id':request.user_id, "session_id":request.session_id, "questions":questions_list}
+
+#     except Exception as e:
+#         # db.rollback()
+#         raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
+
+@router.post("/question-generator", response_model=QuestionResponse)
+async def generate_question(
+    request: QuestionRequest,
+    db = Depends(get_db),
+    current_user: Any = Depends(get_current_user)
+):
+    try:
+        response = await question_generator_agent(
+            schema=request.schema_ddl,
+            difficulty=request.difficulty,
+            topic=request.topic
+        )
+        questions_list = response.questions
+        return {"user_id": str(request.user_id), "session_id": str(request.session_id), "questions": questions_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
+
 
 @router.post("/iscorrect", response_model=CheckCorrectResponse)
 async def check_correct(
@@ -251,6 +273,11 @@ async def check_correct(
 
         # Assign points for correct answer, 0 otherwise
         points = 1 if is_correct else 0
+        difficulty_multiplier = {
+            "basic": 5,
+            "intermediate": 10,
+            "advanced": 20
+        }.get(request.difficulty, 10)
 
     except Exception as e:
         is_executable = False
@@ -273,7 +300,7 @@ async def check_correct(
             "is_correct": is_correct,
             "explanation": explanation,
             "table_head": table_head,
-            "points": points,
+            "points": points*difficulty_multiplier[request.difficulty.lower()],
             "checked_at": datetime.utcnow().isoformat()
         })
         db_session.queries = queries
