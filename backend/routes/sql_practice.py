@@ -253,13 +253,29 @@ async def check_correct(
         conn = get_duckdb_conn(user_id=request.user_id, session_id=request.session_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail="DuckDB connection not found for the given user/session")
-    
+    db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
     table_head = ""
     points = 0
     try:
-        # Try to execute the SQL and fetch a result
-        
         result_df = conn.execute(request.sql).fetch_df().head(10)
+    except Exception as e:
+        is_executable = False
+        is_correct = False
+        table_head = ""
+        response = await explanation_gen_agent(
+            error_generated=str(e)[:300],
+            faulty_sql=request.sql
+        )
+        explanation = response.explanation
+        points = 0
+        # Return a normal response (not an exception) for duckdb errors
+            
+    
+    
+
+    try:
+        # Try to execute the SQL and fetch a result
+
         table_head = result_df.to_markdown()
         is_executable = True
 
@@ -280,40 +296,9 @@ async def check_correct(
         }
         points = points*difficulty_multiplier[request.difficulty.lower()]
 
-    except duckdb.DatabaseError as e:
-        is_executable = False
-        is_correct = False
-        table_head = ""
-        response = await explanation_gen_agent(
-            error_generated=str(e)[:300],
-            faulty_sql=request.sql
-        )
-        explanation = response.explanation
-        points = 0
-        # Return a normal response (not an exception) for duckdb errors
-        return CheckCorrectResponse(
-            user_id=request.user_id,
-            session_id=request.session_id,
-            is_correct=is_correct,
-            explanation=explanation,
-            table_head=table_head,
-            points=points,
-            difficulty=request.difficulty
-        )
-    except Exception as e:
-        # is_executable = False
-        # is_correct = False
-        # table_head = ""
-        # response = await explanation_gen_agent(
-        #     error_generated=str(e)[:300],
-        #     faulty_sql=request.sql
-        # )
-        # explanation = response.explanation
-        # points = 0
-        raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
 
-    # Insert the result into the session's queries in the DB
-    db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
     if db_session:
         queries = db_session.queries or []
         queries.append({
@@ -334,15 +319,20 @@ async def check_correct(
         
         db.commit()
 
-    return CheckCorrectResponse(
-        user_id=request.user_id,
-        session_id=request.session_id,
-        is_correct=is_correct,
-        explanation=explanation,
-        table_head=table_head,
-        points=points,
-        difficulty=request.difficulty  # Add this line
-    )
+
+        return CheckCorrectResponse(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            is_correct=is_correct,
+            explanation=explanation,
+            table_head=table_head,
+            points=points,
+            difficulty=request.difficulty
+        )
+
+
+    # Insert the result into the session's queries in the DB
+
 
 
 
