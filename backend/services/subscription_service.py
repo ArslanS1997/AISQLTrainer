@@ -3,6 +3,8 @@ from sqlalchemy import extract
 from datetime import datetime, timedelta
 from models.database import User, Subscription, SubscriptionPlan, UserUsage
 from typing import Optional, Dict, Any
+import stripe
+import os
 
 class SubscriptionService:
     def __init__(self, db: Session):
@@ -112,6 +114,70 @@ class SubscriptionService:
             usage.competitions_entered += 1
             
         self.db.commit()
+    
+    def cancel_subscription(self, user_id: str) -> Dict[str, Any]:
+        """Cancel user's subscription at period end."""
+        # Get user's current subscription
+        subscription = self.db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.status == 'active'
+        ).first()
+        
+        if not subscription:
+            raise ValueError("No active subscription found")
+        
+        try:
+            # Cancel at period end in Stripe
+            stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+            stripe_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                cancel_at_period_end=True
+            )
+            
+            # Update local database
+            subscription.cancel_at_period_end = True
+            self.db.commit()
+            
+            return {
+                "success": True,
+                "message": "Subscription will cancel at the end of current period",
+                "cancel_at": subscription.current_period_end
+            }
+            
+        except Exception as e:
+            self.db.rollback()
+            raise ValueError(f"Failed to cancel subscription: {str(e)}")
+
+    def reactivate_subscription(self, user_id: str) -> Dict[str, Any]:
+        """Reactivate a subscription that was set to cancel."""
+        subscription = self.db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.status == 'active'
+        ).first()
+        
+        if not subscription:
+            raise ValueError("No active subscription found")
+        
+        try:
+            # Reactivate in Stripe
+            stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+            stripe_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                cancel_at_period_end=False
+            )
+            
+            # Update local database
+            subscription.cancel_at_period_end = False
+            self.db.commit()
+            
+            return {
+                "success": True,
+                "message": "Subscription reactivated successfully"
+            }
+            
+        except Exception as e:
+            self.db.rollback()
+            raise ValueError(f"Failed to reactivate subscription: {str(e)}")
     
     def _get_free_plan(self) -> Dict[str, Any]:
         """Return default free plan."""

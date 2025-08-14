@@ -217,6 +217,11 @@ class SubscriptionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class CancelSubscriptionResponse(BaseModel):
+    success: bool
+    message: str
+    cancel_at: Optional[datetime] = None
+
 # ============================================================================
 # COMMON SCHEMAS
 # ============================================================================

@@ -6,8 +6,9 @@ from routes.auth import get_current_user, get_db
 from services.subscription_service import SubscriptionService
 import stripe
 import os
-from typing import Any
+from typing import Any, Dict, Optional
 from datetime import datetime
+from sqlalchemy import Column, Boolean
 
 router = APIRouter(prefix="/api/stripe", tags=["Stripe"])
 
@@ -96,7 +97,7 @@ async def get_user_subscription(
             'schemas_generated': 0,
             'competitions_entered': 0
         }
-        return {'plan':os.environ('SET_MY_DEFAULT_PLAN'), 'usage':usage}
+        # return {'plan':os.environ('SET_MY_DEFAULT_PLAN'), 'usage':usage}
         raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
 
 @router.get("/feature-check/{feature}")
@@ -197,3 +198,39 @@ async def handle_subscription_deleted(stripe_subscription, db: Session):
     if subscription:
         subscription.status = 'canceled'
         db.commit()
+
+@router.post("/cancel-subscription")
+async def cancel_subscription(
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Cancel user's subscription at period end."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        service = SubscriptionService(db)
+        result = service.cancel_subscription(current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+@router.post("/reactivate-subscription")
+async def reactivate_subscription(
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reactivate a subscription that was set to cancel."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        service = SubscriptionService(db)
+        result = service.reactivate_subscription(current_user.id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to reactivate subscription")
