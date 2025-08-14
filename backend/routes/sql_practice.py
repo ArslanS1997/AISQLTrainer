@@ -256,6 +256,11 @@ async def check_correct(
     db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
     table_head = ""
     points = 0
+    difficulty_multiplier = {
+            "basic": 5,
+            "intermediate": 10,
+            "advanced": 20
+        }
     try:
         result_df = conn.execute(request.sql).fetch_df().head(10)
     except Exception as e:
@@ -289,16 +294,13 @@ async def check_correct(
 
         # Assign points for correct answer, 0 otherwise
         points = 1 if is_correct else 0
-        difficulty_multiplier = {
-            "basic": 5,
-            "intermediate": 10,
-            "advanced": 20
-        }
+
         points = points*difficulty_multiplier[request.difficulty.lower()]
 
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
+    
     if db_session:
         queries = db_session.queries or []
         queries.append({
