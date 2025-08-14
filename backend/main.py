@@ -13,7 +13,7 @@ import uvicorn
 # Import routes
 from routes import (
     auth_router, sql_practice_router, competition_router,
-    dashboard_router
+    dashboard_router, stripe_router
 )
 lm = dspy.LM(model="openai/gpt-4o-mini", max_tokens=5000)
 dspy.settings.configure(lm=lm)
@@ -41,6 +41,7 @@ app.include_router(auth_router)
 app.include_router(sql_practice_router)
 app.include_router(competition_router)
 app.include_router(dashboard_router)
+app.include_router(stripe_router)
 
 
 # ============================================================================

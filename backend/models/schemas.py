@@ -200,13 +200,12 @@ class ProgressResponse(BaseModel):
 # ============================================================================
 
 class CheckoutRequest(BaseModel):
-    price_id: str  # Stripe price ID
-    success_url: str
-    cancel_url: str
+    plan: str
+    billing_cycle: str 
+
 
 class CheckoutResponse(BaseModel):
     checkout_url: str
-    session_id: str
 
 class SubscriptionResponse(BaseModel):
     subscription_id: str

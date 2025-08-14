@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from models.database import get_db, User, Subscription
-from routes.auth import get_current_user
+from models.database import User, Subscription
+from models.schemas import CheckoutRequest, CheckoutResponse
+from routes.auth import get_current_user, get_db
 from services.subscription_service import SubscriptionService
 import stripe
 import os
@@ -21,14 +22,18 @@ PRICE_IDS = {
     'max_yearly': os.getenv("STRIPE_MAX_YEARLY_PRICE_ID"),
 }
 
-@router.post("/create-checkout-session")
+@router.post("/create-checkout-session", response_model = CheckoutResponse)
 async def create_checkout_session(
-    plan: str,
-    billing_cycle: str,  # 'monthly' or 'yearly'
+    request: CheckoutRequest,
+
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
+    
     """Create Stripe checkout session."""
+
+    plan = request.plan.lower()
+    billing_cycle = request.billing_cycle.lower()
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -72,7 +77,7 @@ async def create_checkout_session(
 @router.get("/user-subscription")
 async def get_user_subscription(
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db = Depends(get_db)
 ):
     """Get user's current subscription details."""
     if not current_user:

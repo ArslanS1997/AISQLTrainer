@@ -251,39 +251,25 @@ async def check_correct(
 ):
     try:
         conn = get_duckdb_conn(user_id=request.user_id, session_id=request.session_id)
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail="DuckDB connection not found for the given user/session")
+    
+
     db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
+    difficulty_multiplier = {
+        "basic": 5,
+        "intermediate": 10,
+        "advanced": 20
+    }
     table_head = ""
     points = 0
-    difficulty_multiplier = {
-            "basic": 5,
-            "intermediate": 10,
-            "advanced": 20
-        }
+    is_correct = False
+    explanation = ""
+
+    # Attempt to execute the SQL and check correctness
     try:
         result_df = conn.execute(request.sql).fetch_df().head(10)
-    except Exception as e:
-        is_executable = False
-        is_correct = False
-        table_head = ""
-        response = await explanation_gen_agent(
-            error_generated=str(e)[:300],
-            faulty_sql=request.sql
-        )
-        explanation = response.explanation
-        points = 0
-        # Return a normal response (not an exception) for duckdb errors
-            
-    
-    
-
-    try:
-        # Try to execute the SQL and fetch a result
-
         table_head = result_df.to_markdown()
-        is_executable = True
-
         response = await check_correct_agent(
             question=request.question,
             sql=request.sql,
@@ -291,16 +277,19 @@ async def check_correct(
         )
         is_correct = bool(response.is_correct)
         explanation = response.explanation
-
-        # Assign points for correct answer, 0 otherwise
-        points = 1 if is_correct else 0
-
-        points = points*difficulty_multiplier[request.difficulty.lower()]
-
-
+        points = (1 if is_correct else 0) * difficulty_multiplier.get(request.difficulty.lower(), 0)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
-    
+        # SQL execution failed, generate explanation
+        table_head = ""
+        response = await explanation_gen_agent(
+            error_generated=str(e)[:300],
+            faulty_sql=request.sql
+        )
+        explanation = response.explanation
+        points = 0
+        is_correct = False
+
+    # Update session queries and total score if session exists
     if db_session:
         queries = db_session.queries or []
         queries.append({
@@ -310,27 +299,22 @@ async def check_correct(
             "explanation": explanation,
             "table_head": table_head,
             "points": points,
-            "difficulty":request.difficulty,
+            "difficulty": request.difficulty,
             "checked_at": datetime.utcnow().isoformat()
         })
         db_session.queries = queries
-        
-        # Calculate and update total score
-        total_score = sum(q.get("points", 0) for q in queries if isinstance(q, dict))
-        db_session.total_score = total_score
-        
+        db_session.total_score = sum(q.get("points", 0) for q in queries if isinstance(q, dict))
         db.commit()
 
-
-        return CheckCorrectResponse(
-            user_id=request.user_id,
-            session_id=request.session_id,
-            is_correct=is_correct,
-            explanation=explanation,
-            table_head=table_head,
-            points=points,
-            difficulty=request.difficulty
-        )
+    return CheckCorrectResponse(
+        user_id=request.user_id,
+        session_id=request.session_id,
+        is_correct=is_correct,
+        explanation=explanation,
+        table_head=table_head,
+        points=points,
+        difficulty=request.difficulty
+    )
 
 
     # Insert the result into the session's queries in the DB
@@ -403,8 +387,10 @@ async def populate_tables(
             for row in tables
         }
 
-        if not all(count > 1 for count in counts.values()):
-            raise HTTPException(status_code=400, detail=f"Not all tables have more than 1 rows: {counts}")
+        num_tables = len(counts)
+        num_with_data = sum(1 for count in counts.values() if count > 1)
+        if num_tables == 0 or num_with_data / num_tables <= 0.5:
+            raise HTTPException(status_code=400, detail=f"Not enough tables have more than 1 row: {counts}")
 
         return {"message": "Successfully populated tables!"}
 
