@@ -280,7 +280,7 @@ async def check_correct(
         }
         points = points*difficulty_multiplier[request.difficulty.lower()]
 
-    except Exception as e:
+    except duckdb.DatabaseError as e:
         is_executable = False
         is_correct = False
         table_head = ""
@@ -290,6 +290,26 @@ async def check_correct(
         )
         explanation = response.explanation
         points = 0
+        # Return a normal response (not an exception) for duckdb errors
+        return CheckCorrectResponse(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            is_correct=is_correct,
+            explanation=explanation,
+            table_head=table_head,
+            points=points,
+            difficulty=request.difficulty
+        )
+    except Exception as e:
+        # is_executable = False
+        # is_correct = False
+        # table_head = ""
+        # response = await explanation_gen_agent(
+        #     error_generated=str(e)[:300],
+        #     faulty_sql=request.sql
+        # )
+        # explanation = response.explanation
+        # points = 0
         raise HTTPException(status_code=500, detail=f"iscorrect error: {str(e)} + {str(request)})")
 
     # Insert the result into the session's queries in the DB
