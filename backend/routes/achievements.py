@@ -12,7 +12,7 @@ from models.schemas import DashboardStatsResponse, ProgressResponse, Competition
 from routes.auth import get_current_user, get_db
 from models.database import Session as DBSession
 from models.database import CompetitionSubmission
-from services.subscription_service import SubscriptionService
+from utils.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/api/achievements", tags=["Achievements"])
 

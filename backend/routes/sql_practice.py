@@ -4,9 +4,14 @@ Handles schema generation, query execution, and practice sessions.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from utils.subscription_service import SubscriptionService
 
 from typing import List, Dict, Any
-from utils.agents import create_schema_agent, populate_table_agent, question_generator_agent, explanation_gen_agent, check_correct_agent
+from utils.agents import (
+    create_schema_agent, populate_table_agent, question_generator_agent, explanation_gen_agent, check_correct_agent, code_rewritter_agent
+    , redo_schema_agent
+    )
+
 from datetime import datetime
 import uuid
 import duckdb
@@ -21,7 +26,7 @@ from models.schemas import (
     SessionCreationRequest
 )
 from routes.auth import get_current_user
-from services.subscription_service import SubscriptionService
+
 
 router = APIRouter(prefix="/api/sql", tags=["SQL Practice"])
 
@@ -150,22 +155,28 @@ async def generate_schema(
 
         user_id = current_user.id
         session_id = request.session_id
-        response = await create_schema_agent(user_prompt=request.prompt)
-
-        # Check for reserved keywords in table or column names and add 's' if found
-
-        response.schema_sql = response.schema_sql.replace("Order","Orders")
-
-        created_at = datetime.utcnow().replace(microsecond=0)
         conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
-        # Remove all existing tables before creating the new schema
         existing_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
         for table in existing_tables:
             try:
                 conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
             except Exception:
-                pass  # Ignore errors if table cannot be dropped
-        conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
+                pass
+        response = await create_schema_agent(user_prompt=request.prompt)
+        retry = False
+        created_at = datetime.utcnow().replace(microsecond=0)
+        try:
+
+            conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
+
+        except Exception as e:
+            retry = True
+            response = await redo_schema_agent(user_query = request.prompt, previous_schema= response.schema_sql, error=str(e)[:200])
+            conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
+
+
+        # Check for reserved keywords in table or column names and add 's' if found
+
         tables = conn.execute("SHOW TABLES").fetchall()
         table_names = [row[0] for row in tables]
         schema_created = len(table_names) > 0
@@ -193,11 +204,7 @@ async def generate_schema(
         )
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)} + {str(request)} + {str(dict(user_id=user_id,
-        session_id=session_id,
-        schema_script=response.schema_sql
-  )
-)}")
+        raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)} + {str(request)} ")
 
 # @router.post("/question-generator", response_model=QuestionResponse)
 # async def generate_question(
@@ -238,6 +245,11 @@ async def generate_question(
             topic=request.topic
         )
         questions_list = response.questions
+        
+        # Track usage only after complete workflow (schema + populate + questions)
+        subscription_service = SubscriptionService(db)
+        subscription_service.increment_usage(current_user.id, "generate_schema")
+        
         return {"user_id": str(request.user_id), "session_id": str(request.session_id), "questions": questions_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
@@ -377,9 +389,17 @@ async def populate_tables(
         user_id = current_user.id
         conn = get_duckdb_conn(user_id, request.session_id)
         response = await populate_table_agent(table_schema=request.sql_schema)
+        code_retry = False
 
         code = response.python_code.replace('```', '').replace('python', '')
-        exec(code, {"conn": conn})
+        try:
+            exec(code, {"conn": conn})
+        except Exception as e:
+            code_retry = True
+            response = await code_rewritter_agent(faulty_code = code,schema_ddl= request.sql_schema, error=str(e)[:200])
+            code = response.fixed_code.replace('```', '').replace('python', '')
+            exec(code, {"conn": conn})
+
 
         tables = conn.execute("SHOW TABLES").fetchall()
         counts = {
@@ -392,10 +412,10 @@ async def populate_tables(
         if num_tables == 0 or num_with_data / num_tables <= 0.5:
             raise HTTPException(status_code=400, detail=f"Not enough tables have more than 1 row: {counts}")
 
-        return {"message": "Successfully populated tables!"}
+        return {"message": "Successfully populated tables! with code_retry: "+str(code_retry)}
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)+ f"{str(code)} ")
+        raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)+ f"{str(code)} +{str(code_retry)}")
     
 
 @router.post("/delete-duckdb")

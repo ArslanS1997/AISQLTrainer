@@ -11,7 +11,7 @@ from models.schemas import (
     CompetitionSubmitResponse, CompetitionHistoryResponse
 )
 from routes.auth import get_current_user
-from services.subscription_service import SubscriptionService
+from utils.subscription_service import SubscriptionService
 from routes.auth import get_db
 from models.schemas import SQLSchemaRequest, SQLSchemaResponse
 from routes.achievements import check_master_certificate_eligibility

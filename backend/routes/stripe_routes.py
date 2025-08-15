@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from models.database import User, Subscription
 from models.schemas import CheckoutRequest, CheckoutResponse
 from routes.auth import get_current_user, get_db
-from services.subscription_service import SubscriptionService
+from utils.subscription_service import SubscriptionService
 import stripe
 import os
 from typing import Any, Dict, Optional
