@@ -465,7 +465,7 @@ class text2sqlagent(dspy.Module):
         self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
         self.intermediate_lm = dspy.LM('anthropic/claude-3.5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
         self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
-        self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lmm}
+        self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lm}
 
 
     async def aforward(self, difficulty, question, schema, conn):
