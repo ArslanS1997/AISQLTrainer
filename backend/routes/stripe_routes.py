@@ -9,6 +9,14 @@ import os
 from typing import Any, Dict, Optional
 from datetime import datetime
 from sqlalchemy import Column, Boolean
+import dspy
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Model configurations
+
 
 router = APIRouter(prefix="/api/stripe", tags=["Stripe"])
 
@@ -234,3 +242,5 @@ async def reactivate_subscription(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to reactivate subscription")
+
+

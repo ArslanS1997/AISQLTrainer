@@ -1,7 +1,7 @@
 import dspy
 from typing import List
-from sqlalchemy.orm import Session
 
+import os
 
 
 class create_schema(dspy.Signature):
@@ -19,6 +19,8 @@ class create_schema(dspy.Signature):
     Output: A valid SQL schema containing CREATE TABLE statements to represent this data model.
 
     Your are using duckDB SQL, which is based on SQLite
+    - DONOT INCLUDE COMMENTS AS NO HUMAN WILL READ THIS SCHEMA
+    - KEEP MAXIMUM TO SCHEMA 7 TABLES!
     - DO NOT TRY to add foreign_key etc relationships
     - DONOT USE ORDER OR OTHER RESERVED KEYWORDS IN SQL FOR TABLENAMES/COLUMN NAMES LIKE
             all,analyse,analyze,and,any,array,as,asc,asymmetric,both,case,cast,check,collate,column,constraint,create,default,
@@ -34,75 +36,51 @@ class create_schema(dspy.Signature):
 
 class populate_table(dspy.Signature):
     """
-    You are provided with a DuckDB SQL table schema.
+    Generate Python code to populate a DuckDB table with 250 realistic rows.
 
-    Your task is to generate Python code that does the following:
-    - Uses DuckDB in Python to execute SQL operations.
-    - Simulates and inserts exactly 250 rows of realistic data based on column types and names.
-    - Uses libraries like `faker`, `random`, or `numpy` for generating data.
-    - Creates the table exactly as described in the provided `CREATE TABLE` schema.
-    - Inserts the generated rows using DuckDB SQL INSERT statements (not pandas or DataFrames).
-    - Always use **parameterized SQL queries** (e.g. `conn.execute(query, values)`).
-    - **Do NOT import or connect DuckDB** – the connection is already active as `conn`.
-    - Respect all `NOT NULL`, `UNIQUE`, and `CHECK` constraints in the schema.
-    - Carefully honor **foreign key relationships**:
-        - Populate parent tables before child tables.
-        - Use valid references for foreign key columns.
-    - Handle column-specific logic smartly:
-        - Use realistic values for dates, emails, booleans, etc.
-        - Parse and fill numeric ranges logically.
-        - Match naming patterns (e.g., fields like `email`, `price`, `start_date`, etc.)
-    - Ensure fields with `NOT NULL` are **always filled** with valid, meaningful data.
-    - For fields with `DEFAULT` values, you may choose to use the default or explicitly provide a value.
-    - You may assume any referenced table has already been populated (unless included in the schema).
-    
-    🔹 Correctly handle DATE fields:
-        - Always generate them as `date` or `datetime` objects, then convert to strings **after** using them.
-        - Never pass `.isoformat()` strings into `faker.date_between()`.
-        - Example:
-            ```python
-            start_date_obj = fake.date_between(start_date='-5y', end_date='-1y')
-            end_date_obj = fake.date_between(start_date=start_date_obj, end_date='today')
-            start_date = start_date_obj.isoformat()
-            end_date = end_date_obj.isoformat()
-            ```
+    REQUIREMENTS:
+    - Create table using provided schema
+    - Insert exactly 250 rows with realistic data
+    - Use parameterized queries: `conn.execute(query, values)`
+    - Honor ALL constraints (NOT NULL, UNIQUE, CHECK, foreign keys)
+    - Use faker, random, numpy for data generation
+    - Connection `conn` already exists - don't import/connect DuckDB
 
-    Do not return anything except the generated Python code string.
+    CRITICAL - DATE HANDLING:
+    Generate date objects first, then convert to strings:
+    ```python
+    start_obj = fake.date_between(start_date='-5y', end_date='-1y')
+    end_obj = fake.date_between(start_date=start_obj, end_date='today')  # Use object, not string
+    start_date = start_obj.isoformat()
+    CONSTRAINTS:
 
-    🔹 One-shot Example:
+    Foreign keys: Populate parent tables first, use valid references
+    NOT NULL: Always provide meaningful values
+    UNIQUE: Use fake.unique.* methods
+    Realistic data: Match column names (email→fake.email(), price→realistic prices)
 
-    Input
-    table_schema = '''
-    CREATE TABLE users (
-        user_id INTEGER,
-        full_name VARCHAR NOT NULL,
-        email VARCHAR UNIQUE,
-        age INTEGER,
-        join_date DATE,
-        is_active BOOLEAN NOT NULL
-    );
-    '''
+    EXAMPLE:
+    Schema: CREATE TABLE users (id INTEGER, name VARCHAR NOT NULL, email VARCHAR UNIQUE, active BOOLEAN NOT NULL);
+    Output:
 
-    Output
-    python_code = '''
     from faker import Faker
     import random
-    from datetime import datetime, timedelta
 
     fake = Faker()
+    conn.execute("CREATE TABLE users (id INTEGER, name VARCHAR NOT NULL, email VARCHAR UNIQUE, active BOOLEAN NOT NULL)")
 
-    insert_query = "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)"
+    insert_query = "INSERT INTO users VALUES (?, ?, ?, ?)"
     for i in range(1, 251):
-        full_name = fake.name()
+        name = fake.name()
         email = fake.unique.email()
-        age = random.randint(18, 70)
-        join_date = fake.date_between(start_date='-5y', end_date='today').isoformat()
-        is_active = random.choice([True, False])
-        conn.execute(insert_query, (i, full_name, email, age, join_date, is_active))
-    '''
+        active = random.choice([True, False])
+        conn.execute(insert_query, (i, name, email, active))
+    Return only the Python code, NO COMMENTS SINCE HUMANS WON"T READ THIS!
+
+    Try to be concise!
     """
     table_schema = dspy.InputField(desc="The DuckDB SQL schema for the table")
-    python_code = dspy.OutputField(desc="Python code that generates simulated data & adds it via DuckDB SQL")
+    python_code:str = dspy.OutputField(desc="Python code that generates simulated data & adds it via DuckDB SQL, only Python code here")
 
 
 class basic_questions_gen(dspy.Signature):
@@ -123,14 +101,14 @@ class basic_questions_gen(dspy.Signature):
         - Limiting output with LIMIT
 
     Format:
-    - Generate a List[str] of 5 questions
+    - Generate a List[str] of 10 questions
     - Questions should be clearly worded and directly related to the schema.
     -
       - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for basic difficulty")
+    questions: List[str] = dspy.OutputField(desc="10 questions separated by commas for basic difficulty")
 
 class intermediate_questions_gen(dspy.Signature):
     """
@@ -150,14 +128,14 @@ class intermediate_questions_gen(dspy.Signature):
         - Filtering with IN, BETWEEN, or LIKE
 
     Format:
-    - Generate a List[str] of 5 questions
+    - Generate a List[str] of 10 questions
     - Questions should be clearly worded, relevant to the schema, and encourage deeper understanding of SQL logic.
      - Seperate questions by , don't use that anywhere else except for seperation
        - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for intermediate difficulty")
+    questions: List[str] = dspy.OutputField(desc="10 questions separated by commas for intermediate difficulty")
 
 class hard_questions_gen(dspy.Signature):
     """
@@ -177,14 +155,14 @@ class hard_questions_gen(dspy.Signature):
         - Advanced set operations like INTERSECT, EXCEPT
 
     Format:
-    - Generate a List[str] of 5 questions
+    - Generate a List[str] of 10 questions
     - Questions should be challenging, realistic, and require multiple steps to solve.
      - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
-    questions: List[str] = dspy.OutputField(desc="5 questions separated by commas for hard difficulty")
+    questions: List[str] = dspy.OutputField(desc="10 questions separated by commas for hard difficulty")
 
 
 class question_generator(dspy.Module):
@@ -205,22 +183,27 @@ class question_generator(dspy.Module):
 
 class explanation_gen(dspy.Signature):
     """
-    You are part of an AI-powered SQL training system that helps users understand and learn from their mistakes.
+You are an AI SQL tutor helping beginners understand and correct their SQL mistakes in a supportive, non-technical way.
 
-    Given:
-    - `error_generated`: The error message returned by the SQL engine (DuckDB) after executing a query.
-    - `faulty_sql`: The original SQL query written by the user that caused the error.
+Given:
+- `error_generated`: This is the exact error message returned by the DuckDB engine after running a SQL query.
+- `faulty_sql`: This is the original incorrect SQL query that caused the error.
 
-    Your task:
-    - Analyze the error message and the SQL query.
-    - Generate a clear, beginner-friendly explanation of what went wrong in the SQL query.
-    - Avoid technical jargon where possible.
-    - Focus on helping the user understand the mistake so they can learn and fix it.
+Your task:
+1. Carefully analyze both the error message and the query to figure out *exactly* what the user did wrong.
+2. Write a short, easy-to-understand paragraph explaining the mistake in plain English — imagine you're explaining it to someone new to SQL.
+   - Avoid jargon or overly technical terms.
+   - If helpful, use simple examples or analogies (like explaining a typo in a sentence or choosing the wrong tool for a task).
+   - Be kind and encouraging in tone — the goal is to help the user learn and not feel discouraged.
+3. Provide a corrected version of the query.
+   - Make sure the new query is functional and matches the user's likely intention.
+   - DO NOT just repeat the original query — fix the mistake.
 
-    Format:
-    - Output a single paragraph in simple English.
-    - Use analogies or examples if it helps clarify the issue.
-    - Also give the correct query, DONOT REPEAT THE USERS QUERY CHANGE TO CORRECT
+Format:
+- One paragraph explanation (plain English, helpful tone)
+- One corrected query (code block)
+
+Think like a patient tutor. Focus on understanding, not just fixing.
     """
     error_generated = dspy.InputField(desc="The error generated by the system")
     faulty_sql = dspy.InputField(desc="The SQL user entered into the system")
@@ -319,7 +302,7 @@ class code_fix(dspy.Signature):
     '''
     """
     faulty_code = dspy.InputField(desc="The faulty Python code")
-    error = dspy.InputField(desc="The raised error message")
+    errors = dspy.InputField(desc="The raised error message")
     schema_ddl = dspy.InputField(desc="The DuckDB CREATE TABLE schema")
     fixed_code = dspy.OutputField(desc="The corrected Python code")
 
@@ -346,7 +329,7 @@ class redo_schema(dspy.Signature):
 
     user_query = dspy.InputField(desc="The user query for schema generation")
     previous_schema = dspy.InputField(desc="The schema that caused a generation error in duckDB")
-    error = dspy.InputField(desc="The error generated by the DuckDB engine")
+    errors = dspy.InputField(desc="The error generated by the DuckDB engine")
     schema_sql = dspy.OutputField(desc="The new duckdb schema that avoids the error, it must answer the query as well")
 
 
@@ -468,7 +451,7 @@ class sql_corrector(dspy.Signature):
     question = dspy.InputField(desc="The user's original natural language question.")
     sql_schema = dspy.InputField(desc="The schema of the database (tables, columns, types, etc).")
     faulty_sql = dspy.InputField(desc="The SQL query that failed to execute.")
-    error = dspy.InputField(desc="The error message returned when executing the faulty SQL.")
+    errors = dspy.InputField(desc="The error message returned when executing the faulty SQL.")
     corrected_sql = dspy.OutputField(desc="A corrected SQL query that should execute successfully and answer the question.")
 
 
@@ -479,9 +462,9 @@ class text2sqlagent(dspy.Module):
         self.difficulty_retries ={'basic':1 , 'intermediate':2, 'advanced':4}
         self.sql_genator_agent = dspy.asyncify(dspy.Predict(sql_generator))
         self.sql_corrector = dspy.asyncify(dspy.Predict(sql_corrector))
-        self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.getenviron("OPENAI_API_KEY"),max_tokens=5000)
-        self.intermediate_lm = dspy.LM('anthropic/claude-3.5-sonnet',api_key=os.getenviron("ANTHROPIC_API_KEY") max_tokens =5000)
-        self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.getenviron("GEMINI_API_KEY"), max_token=7000)
+        self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
+        self.intermediate_lm = dspy.LM('anthropic/claude-3.5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
+        self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
         self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lmm}
 
 
@@ -504,7 +487,7 @@ class text2sqlagent(dspy.Module):
                         question=question,
                         sql_schema=schema,
                         faulty_sql=previous_sql,
-                        error=error
+                        errors=error
                     )
                     sql = response.corrected_sql.replace('```', '').replace('sql', '')
                 try:

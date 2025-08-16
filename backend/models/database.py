@@ -23,7 +23,6 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
     points = Column(Integer, default=0)
-    membership = Column(String(50), default='free')
     created_at = Column(DateTime, default=func.now())
     last_login_at = Column(DateTime, default=func.now(), onupdate=func.now())
     subscription_plan_id = Column(String(255), ForeignKey("subscription_plans.id"))
@@ -72,37 +71,37 @@ class Session(Base):
     user = relationship("User", back_populates="sessions")
     schema = relationship("Schema", back_populates="sessions")
 
-class Competition(Base):
-    """Competition model for SQL competitions."""
-    __tablename__ = "competitions"
-    
-    id = Column(String(255), primary_key=True, default=generate_uuid)
-    schema_id = Column(String(255), ForeignKey("schemas.schema_id"), nullable=False)
-    difficulty = Column(String(50), default='basic')
-    time_limit = Column(Integer, default=300)  # seconds
-    started_at = Column(DateTime, default=func.now())
-    expires_at = Column(DateTime, nullable=False)
-    status = Column(String(50), default='active')
-    
-    # Relationships
-    schema = relationship("Schema", back_populates="competitions")
-    submissions = relationship("CompetitionSubmission", back_populates="competition")
-
 class CompetitionSubmission(Base):
-    """Competition submission model for storing user submissions."""
+    """Competition submission model for user vs AI competitions."""
     __tablename__ = "competition_submissions"
     
     id = Column(String(255), primary_key=True, default=generate_uuid)
-    competition_id = Column(String(255), ForeignKey("competitions.id"), nullable=False)
+    competition_id = Column(String(255), nullable=False)  # Remove FK constraint for now
     user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
-    query = Column(Text, nullable=False)
-    score = Column(Integer, default=0)
-    time_taken = Column(Integer, default=0)  # seconds
+    
+    # Competition details
+    difficulty = Column(String(50), nullable=False)  # basic, intermediate, advanced
+    total_rounds = Column(Integer, default=5)
+    
+    # User performance
+    user_queries = Column(JSON)  # List of user's SQL queries
+    user_score = Column(Integer, default=0)  # Total points earned
+    user_correct_answers = Column(Integer, default=0)
+    
+    # AI performance
+    ai_queries = Column(JSON)  # List of AI's SQL queries  
+    ai_score = Column(Integer, default=0)  # Total AI points
+    ai_correct_answers = Column(Integer, default=0)
+    
+    # Result
+    result = Column(String(10))  # 'win', 'lose', 'tie'
+    total_time_taken = Column(Integer, default=0)  # Total seconds
+    
+    # Metadata
     submitted_at = Column(DateTime, default=func.now())
-    rank = Column(Integer)
+    rounds_data = Column(JSON)  # Detailed round-by-round data
     
     # Relationships
-    competition = relationship("Competition", back_populates="submissions")
     user = relationship("User", back_populates="competition_submissions")
 
 class SubscriptionPlan(Base):
@@ -158,6 +157,7 @@ class Subscription(Base):
     status = Column(String(50), nullable=False)  # 'active', 'canceled', 'past_due'
     current_period_end = Column(DateTime, nullable=False)
     cancel_at_period_end = Column(Boolean, default=False)
+    selected_model_index = Column(Integer, default=0)  # Add this line
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     

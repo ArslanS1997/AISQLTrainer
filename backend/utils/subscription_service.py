@@ -66,14 +66,36 @@ class SubscriptionService:
             Subscription.current_period_end > datetime.utcnow()
         ).first()
         
-        if subscription:
-            plan = self.db.query(Subscription).filter(
-                Subscription.name == subscription.plan
-            ).first()
-            if plan:
-                return self._plan_to_dict(plan)
+        # If no subscription exists, create one with the default plan
+        if not subscription:
+            default_plan = os.getenv('DEFAULT_PLAN', 'free').lower()
+            subscription = Subscription(
+                user_id=user_id,
+                plan=default_plan,
+                status='active',
+                current_period_end=datetime.utcnow() + timedelta(days=365),  # Set a far future date
+                cancel_at_period_end=False,
+                selected_model_index=0
+            )
+            self.db.add(subscription)
+            self.db.commit()
+            self.db.refresh(subscription)
         
-        return self._get_free_plan()
+        plan_config = PLAN_CONFIGS.get(subscription.plan, PLAN_CONFIGS['free'])
+        return {
+            'name': subscription.plan,
+            'display_name': plan_config['display_name'],
+            'limits': {
+                'max_schemas_per_month': plan_config['limits']['max_schemas_per_month'],
+                'max_competitions_per_month': plan_config['limits']['max_competitions_per_month']
+            },
+            'features': {
+                'can_download_certificates': plan_config['features']['can_download_certificates'],
+                'can_get_master_certificate': plan_config['features']['can_get_master_certificate'],
+                'ai_model_tier': plan_config['features']['ai_model_tier']
+            },
+            'selected_model_index': getattr(subscription, 'selected_model_index', 0)
+        }
     
     def get_user_usage(self, user_id: str) -> Dict[str, int]:
         """Get user's current month usage."""
@@ -109,26 +131,28 @@ class SubscriptionService:
         result = {'allowed': False, 'reason': '', 'limit': 0, 'used': 0}
         
         if feature == 'generate_schema':
-            result['limit'] = plan['max_schemas_per_month']
+            limit = plan['limits']['max_schemas_per_month']  # Use the limits from plan config
+            result['limit'] = limit
             result['used'] = usage['schemas_generated']
-            result['allowed'] = usage['schemas_generated'] < plan['max_schemas_per_month']
+            result['allowed'] = usage['schemas_generated'] < limit
             if not result['allowed']:
-                result['reason'] = f"Monthly schema limit reached ({plan['max_schemas_per_month']})"
+                result['reason'] = f"Monthly schema limit reached ({limit})"
                 
         elif feature == 'competition':
-            result['limit'] = plan['max_competitions_per_month']
+            limit = plan['limits']['max_competitions_per_month']  # Fix this line
+            result['limit'] = limit
             result['used'] = usage['competitions_entered']
-            result['allowed'] = usage['competitions_entered'] < plan['max_competitions_per_month']
+            result['allowed'] = usage['competitions_entered'] < limit
             if not result['allowed']:
-                result['reason'] = f"Monthly competition limit reached ({plan['max_competitions_per_month']})"
+                result['reason'] = f"Monthly competition limit reached ({limit})"
                 
         elif feature == 'download_certificate':
-            result['allowed'] = plan['can_download_certificates']
+            result['allowed'] = plan['features']['can_download_certificates']  # Fix this line
             if not result['allowed']:
                 result['reason'] = "Certificate download requires Pro or Max plan"
                 
         elif feature == 'master_certificate':
-            result['allowed'] = plan['can_get_master_certificate']
+            result['allowed'] = plan['features']['can_get_master_certificate']  # Fix this line
             if not result['allowed']:
                 result['reason'] = "Master certificate requires Pro or Max plan"
         
@@ -159,9 +183,22 @@ class SubscriptionService:
         self.db.commit()
     
     def _get_free_plan(self) -> Dict[str, Any]:
-     """Return default plan (configurable via env)."""
-     default_plan = os.getenv('DEFAULT_PLAN', 'free').lower()
-     return PLAN_CONFIGS[default_plan]
+        """Return default plan (configurable via env)."""
+        default_plan = os.getenv('DEFAULT_PLAN', 'free').lower()
+        plan_config = PLAN_CONFIGS[default_plan]
+        return {
+            'name': default_plan,
+            'display_name': plan_config['display_name'],
+            'limits': {
+                'max_schemas_per_month': plan_config['limits']['max_schemas_per_month'],
+                'max_competitions_per_month': plan_config['limits']['max_competitions_per_month']
+            },
+            'features': {
+                'can_download_certificates': plan_config['features']['can_download_certificates'],
+                'can_get_master_certificate': plan_config['features']['can_get_master_certificate'],
+                'ai_model_tier': plan_config['features']['ai_model_tier']
+            }
+        }
     
     def _plan_to_dict(self, plan: SubscriptionPlan) -> Dict[str, Any]:
         """Convert plan model to dictionary."""

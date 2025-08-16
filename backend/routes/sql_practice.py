@@ -11,14 +11,16 @@ from utils.agents import (
     create_schema_agent, populate_table_agent, question_generator_agent, explanation_gen_agent, check_correct_agent, code_rewritter_agent
     , redo_schema_agent
     )
+import asyncio
 
 from datetime import datetime
 import uuid
 import duckdb
-# import os
+import os
 import faker
 import re
-from routes.auth import get_db
+import dspy
+from routes.auth import get_db, get_model_for_user
 
 from models.schemas import (
     SQLSchemaRequest, SQLSchemaResponse, SQLExecuteRequest, SQLExecuteResponse,
@@ -140,7 +142,10 @@ async def create_session(
 async def generate_schema(
     request: SQLSchemaRequest,
     db=Depends(get_db),
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
+
+
 ):
     """
     Generate schema, store in DB, associate with user.
@@ -162,17 +167,24 @@ async def generate_schema(
                 conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
             except Exception:
                 pass
-        response = await create_schema_agent(user_prompt=request.prompt)
+        # Get user-specific model
+        
+        
+        # Use the model
+        with dspy.context(lm=lm):
+            response = await create_schema_agent(user_prompt=request.prompt)
+            
         retry = False
         created_at = datetime.utcnow().replace(microsecond=0)
         try:
 
-            conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
+            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
 
         except Exception as e:
             retry = True
-            response = await redo_schema_agent(user_query = request.prompt, previous_schema= response.schema_sql, error=str(e)[:200])
-            conn.execute(response.schema_sql.replace('```','').replace('\n', ' ').replace('\r', ' '))
+            with dspy.context(lm=lm):
+                response = await redo_schema_agent(user_query = request.prompt, previous_schema= response.schema_sql, errors=str(e)[:200])
+            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
 
 
         # Check for reserved keywords in table or column names and add 's' if found
@@ -236,14 +248,17 @@ async def generate_schema(
 async def generate_question(
     request: QuestionRequest,
     db = Depends(get_db),
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
 ):
     try:
-        response = await question_generator_agent(
-            schema=request.schema_ddl,
-            difficulty=request.difficulty,
-            topic=request.topic
-        )
+        with dspy.context(lm=lm):
+            response = await question_generator_agent(
+                schema=request.schema_ddl,
+                difficulty=request.difficulty,
+                topic=request.topic
+            )
+
         questions_list = response.questions
         
         # Track usage only after complete workflow (schema + populate + questions)
@@ -259,7 +274,8 @@ async def generate_question(
 async def check_correct(
     request: CheckCorrectRequest,
     db=Depends(get_db),
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
 ):
     try:
         conn = get_duckdb_conn(user_id=request.user_id, session_id=request.session_id)
@@ -281,22 +297,24 @@ async def check_correct(
     # Attempt to execute the SQL and check correctness
     try:
         result_df = conn.execute(request.sql).fetch_df().head(10)
-        table_head = result_df.to_markdown()
-        response = await check_correct_agent(
-            question=request.question,
-            sql=request.sql,
-            table_head=table_head
-        )
+        table_head = result_df.to_markdown(index=False)
+        with dspy.context(lm=lm):
+            response = await check_correct_agent(
+                question=request.question,
+                sql=request.sql,
+                table_head=table_head
+            )
         is_correct = bool(response.is_correct)
         explanation = response.explanation
         points = (1 if is_correct else 0) * difficulty_multiplier.get(request.difficulty.lower(), 0)
     except Exception as e:
         # SQL execution failed, generate explanation
         table_head = ""
-        response = await explanation_gen_agent(
-            error_generated=str(e)[:300],
-            faulty_sql=request.sql
-        )
+        with dspy.context(lm=lm):
+                response = await explanation_gen_agent(
+                    error_generated=str(e)[:300],
+                    faulty_sql=request.sql
+                )
         explanation = response.explanation
         points = 0
         is_correct = False
@@ -332,7 +350,35 @@ async def check_correct(
     # Insert the result into the session's queries in the DB
 
 
-
+@router.post("/complete-session")
+async def complete_session(
+    session_id: str,
+    db=Depends(get_db),
+    current_user: Any = Depends(get_current_user)
+):
+    """Mark a practice session as completed."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        # Find the session
+        db_session = db.query(DBSession).filter(
+            DBSession.id == session_id,
+            DBSession.user_id == current_user.id
+        ).first()
+        
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Mark as completed
+        db_session.completed_at = datetime.utcnow()
+        db.commit()
+        
+        return {"message": "Session completed successfully", "session_id": session_id}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to complete session: {str(e)}")
 
     
 
@@ -379,16 +425,44 @@ async def execute_sql(
 @router.post("/populate-tables", response_model=PopSuccess)
 async def populate_tables(
     request: PopulateRequest,
-    current_user: Any = Depends(get_current_user)
+    current_user: Any = Depends(get_current_user),
+    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
 ):
     # --- AUTH DEBUGGING ---
     if not current_user or not getattr(current_user, "id", None):
         raise HTTPException(status_code=401, detail="User not authenticated (populate-tables)")
+    code = ''
+    code_retry = False 
     # --- END AUTH DEBUGGING ---
     try:
         user_id = current_user.id
         conn = get_duckdb_conn(user_id, request.session_id)
-        response = await populate_table_agent(table_schema=request.sql_schema)
+        sql_schema = request.sql_schema.replace('\n', '').replace('```','').replace('sql','')
+        # Get all table names
+        table_names = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+
+        # Split the DDL into two pieces at the midpoint of table_names
+        midpoint = len(table_names) // 2
+        ddl_statements = [stmt.strip() for stmt in sql_schema.split(';') if stmt.strip()]
+        # Create a single list with two strings, each containing half of the DDL statements
+        ddl_split = ["", ""]
+        # Split DDL statements into two halves
+        split_index = len(ddl_statements) // 2
+        ddl_split = ["", ""]
+        for i, stmt in enumerate(ddl_statements):
+            if i < split_index:
+                ddl_split[0] += stmt + ";"
+            else:
+                ddl_split[1] += stmt + ";"
+
+        # Use populate_table agent twice concurrently for speed
+
+        with dspy.context(lm=dspy.LM('openai/gpt-4o-mini', temperature=1, max_tokens=7000, api_key=os.environ.get("OPENAI_API_KEY"))):
+            response =  await populate_table_agent(table_schema=sql_schema)
+        code = response.python_code.replace('```', '').replace('python', '') 
+        # Get DDL for each table
+
+
         code_retry = False
 
         code = response.python_code.replace('```', '').replace('python', '')
@@ -396,9 +470,19 @@ async def populate_tables(
             exec(code, {"conn": conn})
         except Exception as e:
             code_retry = True
-            response = await code_rewritter_agent(faulty_code = code,schema_ddl= request.sql_schema, error=str(e)[:200])
+            # Drop all tables in the DuckDB connection using CASCADE before retryings
+            sql_schema = request.sql_schema.replace('\n', '').replace('```','').replace('sql','')
+            with dspy.context(lm = dspy.LM('openai/gpt-5-mini', temperature=1,max_tokens=None,max_completion_tokens=5000, api_key=os.environ.get("OPENAI_API_KEY"))):
+                response = await code_rewritter_agent(faulty_code = code,schema_ddl= sql_schema, errors=str(e)[:200])
             code = response.fixed_code.replace('```', '').replace('python', '')
-            exec(code, {"conn": conn})
+            try:
+                exec(code, {"conn": conn})
+            except Exception as e:
+                return {"message":"Not populated sadly"}
+            
+
+
+
 
 
         tables = conn.execute("SHOW TABLES").fetchall()
@@ -415,7 +499,11 @@ async def populate_tables(
         return {"message": "Successfully populated tables! with code_retry: "+str(code_retry)}
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Code execution failed: " + str(e)+ f"{str(code)} +{str(code_retry)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Code execution failed: {str(e)}\nCode: {str(code)}\nCode retry: {str(code_retry)}\n"
+        )
     
 
 @router.post("/delete-duckdb")
@@ -466,12 +554,10 @@ async def get_sessions(
     # --- END AUTH DEBUGGING ---
     try:
         user_id = current_user.id
-        sessions = (
-            db.query(DBSession)
-            .filter(DBSession.user_id == user_id)
-            .order_by(DBSession.created_at.desc())
-            .all()
-        )
+        # Get all user's sessions that have queries (regardless of completion status)
+        sessions = db.query(DBSession).filter(
+            DBSession.user_id == user_id
+        ).all()
         session_responses = []
         for s in sessions:
             session_responses.append(
@@ -524,3 +610,28 @@ async def get_user_schemas(
         return schema_responses
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"schemas error: {str(e)}") 
+
+@router.post("/complete-all-sessions")
+async def complete_all_sessions(
+    db=Depends(get_db),
+    current_user: Any = Depends(get_current_user)
+):
+    """Temporary endpoint to mark all user sessions as completed for testing."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        sessions = db.query(DBSession).filter(
+            DBSession.user_id == current_user.id,
+            DBSession.completed_at.is_(None)
+        ).all()
+        
+        for session in sessions:
+            session.completed_at = datetime.utcnow()
+        
+        db.commit()
+        return {"message": f"Completed {len(sessions)} sessions", "completed_count": len(sessions)}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to complete sessions: {str(e)}") 
