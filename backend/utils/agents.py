@@ -519,6 +519,7 @@ code_rewritter_agent = dspy.asyncify(dspy.Predict(code_fix))
 
 redo_schema_agent = dspy.asyncify(dspy.Predict(redo_schema))
 
+ai_competitor_agent = dspy.asyncify(text2sqlagent())
 
 
 
