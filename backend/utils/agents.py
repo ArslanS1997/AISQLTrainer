@@ -39,11 +39,12 @@ class populate_table(dspy.Signature):
     Generate Python code to populate a DuckDB table with 250 realistic rows.
 
     REQUIREMENTS:
-    - Create table using provided schema
+    - TABLES ARE ALREADY CREATED JUST INSERT DATA
     - Insert exactly 250 rows with realistic data
     - Use parameterized queries: `conn.execute(query, values)`
     - Honor ALL constraints (NOT NULL, UNIQUE, CHECK, foreign keys)
     - Use faker, random, numpy for data generation
+    - use fake.unique to ensure uniqueness constraint
     - Connection `conn` already exists - don't import/connect DuckDB
 
     CRITICAL - DATE HANDLING:
