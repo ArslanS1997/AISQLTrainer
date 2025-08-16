@@ -136,6 +136,20 @@ class SessionResponse(BaseModel):
 # ============================================================================
 # COMPETITION SCHEMAS
 # ============================================================================
+class AICompetitionRequest(BaseModel):
+    competition_id: str
+    question: str
+    schema_ddl: str
+    difficulty: str
+    time_limit: int
+
+class AICompetitionResponse(BaseModel):
+    competition_id: str
+    answer: str
+    difficulty: str
+    in_time: bool
+    
+
 
 class Competition(BaseModel):
     competition_id: str
