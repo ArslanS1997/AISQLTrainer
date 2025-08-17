@@ -17,7 +17,6 @@ import {
 import { ModelSelector } from './ModelSelector';
 import { useClickOutside } from '../utils/useClickOutside';
 import { useSubscriptionUpdate } from '../utils/useSubscriptionUpdate';
-import logo from '../../images/SQLTrainerAI.svg';
 
 
 export const Navbar: React.FC = () => {
@@ -53,7 +52,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
               <img 
-                src={logo}
+                src="/images/SQLTrainerAI.png"  // Changed from ../images to /images
                 alt="SQL Trainer AI" 
                 className="h-8 w-auto" 
               />

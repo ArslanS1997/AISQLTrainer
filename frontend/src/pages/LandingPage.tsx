@@ -19,8 +19,6 @@ import {
   Target,
   ExternalLink
 } from 'lucide-react';
-import logo from '../../images/SQLTrainerAI.svg';
-import textLogo from '../../images/text-only.svg';
 
 export const LandingPage: React.FC = () => {
   const { user, signIn } = useAuth();
@@ -65,10 +63,13 @@ export const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <div className="flex items-center space-x-2">
-                <Database className="h-8 w-8 text-primary-600" />
-                <span className="text-xl font-bold text-secondary-900">SQL Tutor AI</span>
-              </div>
+              <Link to="/" className="flex items-center">
+                <img 
+                  src="/images/SQLTrainerAI.png" 
+                  alt="SQL Trainer AI" 
+                  className="h-8 w-auto" 
+                />
+              </Link>
             </div>
             <div className="flex items-center space-x-4">
               <Link to="/pricing" className="text-secondary-600 hover:text-secondary-900">
@@ -92,9 +93,9 @@ export const LandingPage: React.FC = () => {
           <div className="text-center">
             <div className="flex justify-center mb-8">
               <img 
-                src={textLogo}
+                src="/images/SQLTrainerAI.png" 
                 alt="SQL Trainer AI" 
-                className="h-16 md:h-24 w-auto mx-auto" 
+                className="h-20 md:h-28 w-auto mx-auto" 
               />
             </div>
             
@@ -103,7 +104,8 @@ export const LandingPage: React.FC = () => {
             </h2>
             
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-600">
-              Learn SQL through interactive practice, real-time AI feedback, and professional certification.
+              Learn SQL through interactive practice,<br className="hidden sm:inline" /> real-time AI feedback, and professional certification.
+              <br className="hidden sm:inline"/>
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
