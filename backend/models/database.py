@@ -80,25 +80,36 @@ class CompetitionSubmission(Base):
     
     # Competition details
     difficulty = Column(String(50), nullable=False)  # basic, intermediate, advanced
+    schema_ddl = Column(Text, nullable=False)  # ADD THIS - The schema DDL for this competition
+    questions = Column(JSON, nullable=False)  # ADD THIS - List of 5 pre-generated questions
     total_rounds = Column(Integer, default=5)
+    current_round = Column(Integer, default=1)  # ADD THIS - Track current round
+    
+    # Timing
+    time_limit = Column(Integer, default=180)  # User gets 3 minutes total
+    ai_time_limit = Column(Integer, default=30)  # AI gets 30 seconds per question
+    started_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False)  # ADD THIS
+    completed_at = Column(DateTime)  # ADD THIS
     
     # User performance
-    user_queries = Column(JSON)  # List of user's SQL queries
+    user_queries = Column(JSON, default=list)  # List of user's SQL queries
     user_score = Column(Integer, default=0)  # Total points earned
     user_correct_answers = Column(Integer, default=0)
     
     # AI performance
-    ai_queries = Column(JSON)  # List of AI's SQL queries  
+    ai_queries = Column(JSON, default=list)  # List of AI's SQL queries  
     ai_score = Column(Integer, default=0)  # Total AI points
     ai_correct_answers = Column(Integer, default=0)
     
     # Result
     result = Column(String(10))  # 'win', 'lose', 'tie'
     total_time_taken = Column(Integer, default=0)  # Total seconds
+    status = Column(String(20), default='active')  # active, completed, expired
     
     # Metadata
     submitted_at = Column(DateTime, default=func.now())
-    rounds_data = Column(JSON)  # Detailed round-by-round data
+    rounds_data = Column(JSON, default=list)  # Detailed round-by-round data
     
     # Relationships
     user = relationship("User", back_populates="competition_submissions")

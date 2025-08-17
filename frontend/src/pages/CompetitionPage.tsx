@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { Button } from '../components/Button';
 import { Textarea } from '../components/Textarea';
+import { TableDataViewer } from '../components/TableDataViewer';
+import { DatabaseSchemaDiagram } from '../components/DatabaseSchemaDiagram';
 import { 
   Trophy, 
   Clock, 
@@ -11,87 +14,111 @@ import {
   User,
   Target,
   CheckCircle,
-  XCircle
+  XCircle,
+  Database,
+  Award,
+  ArrowRight,
+  Timer,
+  Zap,
+  Crown,
+  Table,
+  X
 } from 'lucide-react';
 import { useUpgrade } from '../contexts/UpgradeContext';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { apiClient } from '../utils/api';
 
+interface CompetitionRound {
+  round: number;
+  question: string;
+  user_query: string;
+  ai_query: string;
+  user_correct: boolean;
+  ai_correct: boolean;
+  user_time: number;
+  ai_time: number;
+  explanation: string;
+  correct_answer: string;
+  user_query_results?: any[]; // ADD THIS - Actual query results from user
+  ai_query_results?: any[];   // ADD THIS - Actual query results from AI
+}
+
+interface CompetitionQuestion {
+  round: number;
+  question: string;
+  difficulty: string;
+}
+
 interface CompetitionState {
   competitionId: string | null;
   difficulty: string;
-  timeLimit: number;
-  timeRemaining: number;
-  isActive: boolean;
-  isFinished: boolean;
-  userQuery: string;
-  result: 'win' | 'lose' | null;
-  score: number;
-  feedback: string;
-  startedAt: Date | null;
-  expiresAt: Date | null;
+  schema_ddl: string;
+  questions: CompetitionQuestion[];
+  total_rounds: number;
+  current_round: number;
+  user_score: number;
+  ai_score: number;
+  time_remaining: number;
+  status: 'setup' | 'active' | 'completed' | 'expired'; // ADD 'expired' here
+  result: string | null;
+  current_question: string;
+  user_query: string;
+  rounds_data: CompetitionRound[];
+  can_get_certificate?: boolean;
+  expires_at?: Date | null;
 }
 
 const DIFFICULTY_OPTIONS = [
-  { value: 'basic', label: 'Basic', description: '10 points', time: 300 },
-  { value: 'intermediate', label: 'Intermediate', description: '20 points', time: 240 },
-  { value: 'advanced', label: 'Advanced', description: '30 points', time: 180 }
+  { value: 'beginner', label: 'Beginner', description: 'Basic SQL queries', color: 'bg-green-500' },
+  { value: 'intermediate', label: 'Intermediate', description: 'Joins and aggregations', color: 'bg-yellow-500' },
+  { value: 'advanced', label: 'Advanced', description: 'Complex queries', color: 'bg-red-500' }
 ];
 
 export const CompetitionPage: React.FC = () => {
   const { user } = useAuth();
-  const { isModalOpen, hideUpgradeModal } = useUpgrade();
+  const { subscription, isPremiumUser } = useSubscription();
+  const { showUpgradeModal, isModalOpen, hideUpgradeModal } = useUpgrade();
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedDifficulty, setSelectedDifficulty] = useState('basic');
-  const [history, setHistory] = useState([]);
-  const [stats, setStats] = useState({
-    total_competitions: 0,
-    wins: 0,
-    losses: 0,
-    win_rate: 0,
-    total_score: 0,
-    average_score: 0
-  });
+  const [selectedDifficulty, setSelectedDifficulty] = useState('beginner');
+  const [showResults, setShowResults] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [currentExplanation, setCurrentExplanation] = useState('');
 
   const [competition, setCompetition] = useState<CompetitionState>({
     competitionId: null,
-    difficulty: 'basic',
-    timeLimit: 300,
-    timeRemaining: 300,
-    isActive: false,
-    isFinished: false,
-    userQuery: '',
+    difficulty: 'beginner',
+    schema_ddl: '',
+    questions: [],  // ADD THIS
+    total_rounds: 5,
+    current_round: 1,
+    user_score: 0,
+    ai_score: 0,
+    time_remaining: 180, // 3 minutes total
+    status: 'setup',
     result: null,
-    score: 0,
-    feedback: '',
-    startedAt: null,
-    expiresAt: null
+    current_question: '',
+    user_query: '',
+    rounds_data: [],
+    can_get_certificate: false,
+    expires_at: null
   });
 
-  // Load competition history and stats
+  // Timer countdown
   useEffect(() => {
-    if (user) {
-      loadHistory();
-      loadStats();
-    }
-  }, [user]);
-
-  // Timer logic
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | null = null;
     
-    if (competition.isActive && competition.timeRemaining > 0) {
+    if (competition.status === 'active' && competition.time_remaining > 0) {
       interval = setInterval(() => {
         setCompetition(prev => {
-          const newTimeRemaining = prev.timeRemaining - 1;
+          const newTimeRemaining = prev.time_remaining - 1;
           
           if (newTimeRemaining <= 0) {
-            // Time's up - auto submit
-            handleSubmit(true);
-            return { ...prev, timeRemaining: 0, isActive: false };
+            // Time's up - auto submit current query
+            handleSubmitAnswer(true);
+            return { ...prev, time_remaining: 0, status: 'expired' };
           }
           
-          return { ...prev, timeRemaining: newTimeRemaining };
+          return { ...prev, time_remaining: newTimeRemaining };
         });
       }, 1000);
     }
@@ -99,381 +126,624 @@ export const CompetitionPage: React.FC = () => {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [competition.isActive, competition.timeRemaining]);
-
-  const loadHistory = async () => {
-    try {
-      const response = await apiClient.getCompetitionHistory();
-      if (response.data) {
-        setHistory(response.data.competitions || []);
-      }
-    } catch (error) {
-      console.error('Failed to load competition history:', error);
-    }
-  };
-
-  const loadStats = async () => {
-    try {
-      const response = await apiClient.getCompetitionStats();
-      if (response.data) {
-        setStats(response.data);
-      }
-    } catch (error) {
-      console.error('Failed to load competition stats:', error);
-    }
-  };
+  }, [competition.status, competition.time_remaining]);
 
   const startCompetition = async () => {
     setIsLoading(true);
     
     try {
-      const difficultyData = DIFFICULTY_OPTIONS.find(d => d.value === selectedDifficulty);
-      const timeLimit = difficultyData?.time || 300;
-      
       const response = await apiClient.startCompetition({
-        difficulty: selectedDifficulty,
-        time_limit: timeLimit
-      });
-      
-      if (response.data) {
-        setCompetition({
-          competitionId: response.data.competition_id,
-          difficulty: response.data.difficulty,
-          timeLimit: response.data.time_limit,
-          timeRemaining: response.data.time_limit,
-          isActive: true,
-          isFinished: false,
-          userQuery: '',
-          result: null,
-          score: 0,
-          feedback: '',
-          startedAt: new Date(response.data.started_at),
-          expiresAt: new Date(response.data.expires_at)
-        });
-      } else if (response.error) {
-        alert(response.error);
-      }
-    } catch (error) {
-      console.error('Failed to start competition:', error);
-      alert('Failed to start competition');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async (timeUp = false) => {
-    if (!competition.competitionId) return;
-    
-    setIsLoading(true);
-    
-    try {
-      const response = await apiClient.submitCompetition({
-        competition_id: competition.competitionId,
-        query: competition.userQuery
+        difficulty: selectedDifficulty
       });
       
       if (response.data) {
         setCompetition(prev => ({
           ...prev,
-          isActive: false,
-          isFinished: true,
-          result: response.data.success ? 'win' : 'lose',
-          score: response.data.score,
-          feedback: timeUp ? 'Time\'s up! ' + response.data.feedback : response.data.feedback
+          competitionId: response.data!.competition_id,
+          difficulty: response.data!.difficulty,
+          schema_ddl: response.data!.schema_ddl,
+          questions: response.data!.questions,  // ADD THIS - Store all questions
+          total_rounds: response.data!.total_rounds,
+          current_round: response.data!.current_round,
+          time_remaining: response.data!.time_limit,
+          status: 'active',
+          current_question: response.data!.questions[0]?.question || ''  // First question
         }));
-        
-        // Refresh stats and history
-        loadHistory();
-        loadStats();
-      } else if (response.error) {
-        alert(response.error);
       }
-    } catch (error) {
-      console.error('Failed to submit competition:', error);
-      alert('Failed to submit competition');
+    } catch (error: any) {
+      console.error('Failed to start competition:', error);
+      if (error.response?.status === 403) {
+        showUpgradeModal('competitions', subscription?.plan?.name || 'free');
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const getNextQuestion = async (competitionId: string, round: number) => {
+    try {
+      // Use the question from stored questions array instead of API call
+      const questionIndex = round - 1;
+      if (questionIndex < competition.questions.length) {
+        const nextQuestion = competition.questions[questionIndex].question;
+
+        setCompetition(prev => ({
+          ...prev,
+          current_round: round,
+          current_question: nextQuestion,
+          user_query: ''
+        }));
+      } else {
+        // All questions completed, get final result
+        await getCompetitionResult();
+      }
+    } catch (error) {
+      console.error('Failed to get next question:', error);
+    }
+  };
+
+  const handleSubmitAnswer = async (timeExpired: boolean = false) => {
+    if (!competition.competitionId || !competition.user_query.trim()) {
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const response = await apiClient.submitCompetitionAnswer({
+        competition_id: competition.competitionId,
+        round: competition.current_round,
+        user_query: competition.user_query
+      });
+      
+      if (response.data) {
+        const roundData: CompetitionRound = {
+          round: competition.current_round,
+          question: competition.current_question,
+          user_query: competition.user_query,
+          ai_query: response.data.ai_query || '',
+          user_correct: response.data.user_correct,
+          ai_correct: response.data.ai_correct,
+          user_time: 0, // Will be calculated from time remaining
+          ai_time: 30, // AI gets 30 seconds
+          explanation: response.data.explanation,
+          correct_answer: response.data.correct_answer,
+          user_query_results: response.data.user_query_results || [], // Add actual results
+          ai_query_results: response.data.ai_query_results || []       // Add actual results
+        };
+
+        setCompetition(prev => ({
+          ...prev,
+          user_score: response.data!.user_points || prev.user_score,
+          ai_score: response.data!.ai_points || prev.ai_score,
+          rounds_data: [...prev.rounds_data, roundData],
+          user_query: ''
+        }));
+
+        // Show explanation if user was wrong
+        if (!response.data.user_correct) {
+          setCurrentExplanation(response.data.explanation);
+          setShowExplanation(true);
+        }
+
+        // Check if competition is finished
+        if (response.data.competition_completed) {
+          await getCompetitionResult();
+        } else if (response.data.next_round) {
+          // Get next question
+          await getNextQuestion(competition.competitionId!, response.data.next_round);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to submit answer:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getCompetitionResult = async () => {
+    if (!competition.competitionId) return;
+
+    try {
+      const response = await apiClient.getCompetitionResult({
+        competition_id: competition.competitionId
+      });
+      
+      if (response.data) {
+        setCompetition(prev => ({
+          ...prev,
+          status: 'completed',
+          result: response.data!.final_result,
+          user_score: response.data!.user_score,
+          ai_score: response.data!.ai_score,
+          rounds_data: response.data!.rounds_data,
+          can_get_certificate: response.data!.can_get_certificate
+        }));
+        setShowResults(true);
+      }
+    } catch (error) {
+      console.error('Failed to get competition result:', error);
     }
   };
 
   const resetCompetition = () => {
     setCompetition({
       competitionId: null,
-      difficulty: 'basic',
-      timeLimit: 300,
-      timeRemaining: 300,
-      isActive: false,
-      isFinished: false,
-      userQuery: '',
+      difficulty: 'beginner',
+      schema_ddl: '',
+      questions: [],  // ADD THIS
+      total_rounds: 5,
+      current_round: 1,
+      user_score: 0,
+      ai_score: 0,
+      time_remaining: 180,
+      status: 'setup',
       result: null,
-      score: 0,
-      feedback: '',
-      startedAt: null,
-      expiresAt: null
+      current_question: '',
+      user_query: '',
+      rounds_data: [],
+      can_get_certificate: false,
+      expires_at: null
     });
+    setShowResults(false);
+    setShowExplanation(false);
   };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  if (!user) {
+  const getResultIcon = () => {
+    if (competition.result === 'win') return <Trophy className="h-8 w-8 text-yellow-500" />;
+    if (competition.result === 'lose') return <XCircle className="h-8 w-8 text-red-500" />;
+    return <Target className="h-8 w-8 text-blue-500" />;
+  };
+
+  const getResultMessage = () => {
+    if (competition.result === 'win') return 'Congratulations! You won!';
+    if (competition.result === 'lose') return 'Good effort! The AI won this time.';
+    return 'It\'s a tie! Great match!';
+  };
+
+  if (showResults) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Please sign in to participate in competitions</h1>
+      <div className="max-w-6xl mx-auto p-6">
+        {/* Results Header */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 text-center mb-8">
+          {getResultIcon()}
+          <h1 className="text-3xl font-bold text-secondary-900 mt-4 mb-2">
+            {getResultMessage()}
+          </h1>
+          <div className="flex justify-center items-center space-x-8 mt-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">{competition.user_score}</div>
+              <div className="text-sm text-secondary-600">Your Score</div>
+            </div>
+            <div className="text-2xl text-secondary-400">VS</div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600">{competition.ai_score}</div>
+              <div className="text-sm text-secondary-600">AI Score</div>
+            </div>
+          </div>
         </div>
+
+        {/* Rounds Summary */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-8">
+          <h2 className="text-xl font-semibold mb-4">Round Summary</h2>
+          <div className="space-y-4">
+            {competition.rounds_data.map((round, index) => (
+              <div key={index} className="border border-secondary-200 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-medium">Round {round.round}</h3>
+                  <div className="flex space-x-2">
+                    {round.user_correct ? (
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                    {round.ai_correct ? (
+                      <Brain className="h-5 w-5 text-blue-500" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-gray-400" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-sm text-secondary-600 mb-2">{round.question}</p>
+                <div className="text-xs text-secondary-500">
+                  <p><strong>Your Query:</strong> {round.user_query}</p>
+                  <p><strong>AI Query:</strong> {round.ai_query}</p>
+                  {round.explanation && (
+                    <p className="mt-2"><strong>Explanation:</strong> {round.explanation}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Certificate or Upgrade */}
+        {competition.can_get_certificate ? (
+          <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-6 mb-8">
+            <div className="flex items-center space-x-4">
+              <Award className="h-8 w-8 text-yellow-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-yellow-800">Congratulations!</h3>
+                <p className="text-yellow-700">You've earned a competition certificate!</p>
+              </div>
+              <Button className="ml-auto">
+                <Award className="h-4 w-4 mr-2" />
+                Get Certificate
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6 mb-8">
+            <div className="flex items-center space-x-4">
+              <Crown className="h-8 w-8 text-blue-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-blue-800">Upgrade to Get Certificates</h3>
+                <p className="text-blue-700">Premium users get certificates for their achievements!</p>
+              </div>
+              <Button 
+                onClick={() => showUpgradeModal('certificates', subscription?.plan?.name || 'free')}
+                className="ml-auto"
+              >
+                <Crown className="h-4 w-4 mr-2" />
+                Upgrade Now
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex justify-center space-x-4">
+          <Button onClick={resetCompetition} variant="outline">
+            New Competition
+          </Button>
+          <Button onClick={() => window.location.href = '/achievements'}>
+            View Achievements
+          </Button>
+        </div>
+
+        <UpgradeModal 
+          isOpen={isModalOpen} 
+          onClose={hideUpgradeModal}
+          onUpgrade={() => {}}
+          feature="competitions"
+          currentPlan={subscription?.plan?.name || 'free'}
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">SQL Competition Arena</h1>
-          <p className="text-gray-600">Compete against our AI system in SQL challenges</p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Trophy className="h-8 w-8 text-yellow-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Competitions</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total_competitions}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <CheckCircle className="h-8 w-8 text-green-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Wins</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.wins}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Target className="h-8 w-8 text-blue-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Win Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{(stats.win_rate * 100).toFixed(1)}%</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Brain className="h-8 w-8 text-purple-500" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Score</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total_score}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Competition Area */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Competition Arena</h2>
-              {competition.isActive && (
-                <div className="flex items-center space-x-2 text-lg font-mono">
-                  <Clock className="h-5 w-5 text-red-500" />
-                  <span className={`${competition.timeRemaining <= 30 ? 'text-red-500' : 'text-gray-600'}`}>
-                    {formatTime(competition.timeRemaining)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {!competition.isActive && !competition.isFinished && (
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Select Difficulty
-                  </label>
-                  <div className="grid grid-cols-1 gap-3">
-                    {DIFFICULTY_OPTIONS.map((option) => (
-                      <label key={option.value} className="relative">
-                        <input
-                          type="radio"
-                          name="difficulty"
-                          value={option.value}
-                          checked={selectedDifficulty === option.value}
-                          onChange={(e) => setSelectedDifficulty(e.target.value)}
-                          className="sr-only"
-                        />
-                        <div className={`border-2 rounded-lg p-4 cursor-pointer transition-colors ${
-                          selectedDifficulty === option.value
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}>
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <h3 className="font-medium text-gray-900">{option.label}</h3>
-                              <p className="text-sm text-gray-600">{option.description}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-gray-600">{option.time}s</p>
-                            </div>
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <Button
-                  onClick={startCompetition}
-                  disabled={isLoading}
-                  className="w-full py-3"
-                  size="lg"
-                >
-                  <Play className="h-5 w-5 mr-2" />
-                  {isLoading ? 'Starting...' : 'Start Competition'}
-                </Button>
-              </div>
-            )}
-
-            {competition.isActive && (
-              <div className="space-y-6">
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <h3 className="font-medium text-blue-900 mb-2">Competition Challenge</h3>
-                  <p className="text-blue-800">
-                    Write any valid SQL query to compete against our AI system. 
-                    The more complex and correct your query, the better your chances of winning!
-                  </p>
-                  <p className="text-sm text-blue-600 mt-2">
-                    Difficulty: <strong>{competition.difficulty}</strong> • 
-                    Possible Score: <strong>{
-                      competition.difficulty === 'basic' ? '10' :
-                      competition.difficulty === 'intermediate' ? '20' : '30'
-                    } points</strong>
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Your SQL Query
-                  </label>
-                  <Textarea
-                    value={competition.userQuery}
-                    onChange={(e) => setCompetition(prev => ({ ...prev, userQuery: e.target.value }))}
-                    placeholder="Enter your SQL query here..."
-                    rows={8}
-                    className="font-mono"
-                  />
-                </div>
-
-                <div className="flex space-x-4">
-                  <Button
-                    onClick={() => handleSubmit()}
-                    disabled={!competition.userQuery.trim() || isLoading}
-                    className="flex-1"
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    {isLoading ? 'Submitting...' : 'Submit Query'}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {competition.isFinished && (
-              <div className="space-y-6">
-                <div className={`rounded-lg p-6 ${
-                  competition.result === 'win' 
-                    ? 'bg-green-50 border-2 border-green-200' 
-                    : 'bg-red-50 border-2 border-red-200'
-                }`}>
-                  <div className="flex items-center mb-4">
-                    {competition.result === 'win' ? (
-                      <CheckCircle className="h-8 w-8 text-green-500" />
-                    ) : (
-                      <XCircle className="h-8 w-8 text-red-500" />
-                    )}
-                    <h3 className={`ml-3 text-xl font-bold ${
-                      competition.result === 'win' ? 'text-green-900' : 'text-red-900'
-                    }`}>
-                      {competition.result === 'win' ? 'You Won!' : 'AI Wins!'}
-                    </h3>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <p className={`font-medium ${
-                      competition.result === 'win' ? 'text-green-800' : 'text-red-800'
-                    }`}>
-                      Score: {competition.score} points
-                    </p>
-                    <p className={`text-sm ${
-                      competition.result === 'win' ? 'text-green-700' : 'text-red-700'
-                    }`}>
-                      {competition.feedback}
-                    </p>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={resetCompetition}
-                  variant="outline"
-                  className="w-full"
-                >
-                  Start New Competition
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Competition History */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Recent Competitions</h2>
-            
-            {history.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No competitions yet. Start your first competition!
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {history.slice(0, 10).map((comp: any) => (
-                  <div key={comp.competition_id} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        {comp.rank === 1 ? (
-                          <CheckCircle className="h-5 w-5 text-green-500" />
-                        ) : (
-                          <XCircle className="h-5 w-5 text-red-500" />
-                        )}
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {comp.difficulty.charAt(0).toUpperCase() + comp.difficulty.slice(1)}
-                          </p>
-                          <p className="text-sm text-gray-600">
-                            {new Date(comp.completed_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900">{comp.score} pts</p>
-                        <p className="text-sm text-gray-600">{comp.time_taken}s</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+    <div className="max-w-6xl mx-auto p-6">
+      {/* Header */}
+      <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 mb-8">
+        <div className="text-center">
+          <Trophy className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h1 className="text-3xl font-bold text-secondary-900 mb-2">SQL Competition Arena</h1>
+          <p className="text-secondary-600">Challenge the AI in 5 rounds of SQL battles</p>
         </div>
       </div>
 
-      {isModalOpen && <UpgradeModal isOpen={isModalOpen} onClose={hideUpgradeModal} onUpgrade={() => {}} feature="competitions" currentPlan="free" />}
+      {competition.status === 'setup' ? (
+        /* Competition Setup */
+        <div className="grid lg:grid-cols-2 gap-8">
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+            <h2 className="text-xl font-semibold mb-6">Choose Your Challenge</h2>
+            
+            <div className="space-y-4 mb-6">
+              {DIFFICULTY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedDifficulty(option.value)}
+                  className={`w-full p-4 rounded-lg border-2 transition-all ${
+                    selectedDifficulty === option.value
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-secondary-200 hover:border-secondary-300'
+                  }`}
+                >
+                  <div className="flex items-center space-x-4">
+                    <div className={`w-4 h-4 rounded-full ${option.color}`}></div>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium">{option.label}</div>
+                      <div className="text-sm text-secondary-600">{option.description}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
+                <span className="text-sm font-medium">Total Rounds</span>
+                <span className="text-sm text-secondary-600">5 Questions</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
+                <span className="text-sm font-medium">Your Time Limit</span>
+                <span className="text-sm text-secondary-600">3 Minutes Total</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
+                <span className="text-sm font-medium">AI Time per Question</span>
+                <span className="text-sm text-secondary-600">30 Seconds</span>
+              </div>
+            </div>
+
+            <Button 
+              onClick={startCompetition} 
+              disabled={isLoading}
+              className="w-full"
+              size="lg"
+            >
+              {isLoading ? (
+                'Starting Competition...'
+              ) : (
+                <>
+                  <Play className="h-5 w-5 mr-2" />
+                  Start Competition
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Rules */}
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+            <h2 className="text-xl font-semibold mb-6">Competition Rules</h2>
+            
+            <div className="space-y-4">
+              <div className="flex items-start space-x-3">
+                <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                <div>
+                  <div className="font-medium">5 Rounds Total</div>
+                  <div className="text-sm text-secondary-600">Answer 5 SQL questions to complete the competition</div>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <Timer className="h-5 w-5 text-blue-500 mt-0.5" />
+                <div>
+                  <div className="font-medium">Time Limits</div>
+                  <div className="text-sm text-secondary-600">You get 3 minutes total, AI gets 30 seconds per question</div>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <Target className="h-5 w-5 text-purple-500 mt-0.5" />
+                <div>
+                  <div className="font-medium">Scoring</div>
+                  <div className="text-sm text-secondary-600">1 point for each correct answer. Highest score wins!</div>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <Brain className="h-5 w-5 text-orange-500 mt-0.5" />
+                <div>
+                  <div className="font-medium">AI Explanations</div>
+                  <div className="text-sm text-secondary-600">Get explanations when you answer incorrectly</div>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <Award className="h-5 w-5 text-yellow-500 mt-0.5" />
+                <div>
+                  <div className="font-medium">Certificates</div>
+                  <div className="text-sm text-secondary-600">Premium users earn certificates for their victories</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Active Competition */
+        <div className="space-y-8">
+          {/* Competition Status */}
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <h2 className="text-xl font-semibold">Round {competition.current_round} of {competition.total_rounds}</h2>
+                <div className="flex space-x-1">
+                  {Array.from({ length: competition.total_rounds }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`w-3 h-3 rounded-full ${
+                        i < competition.current_round - 1
+                          ? 'bg-green-500'
+                          : i === competition.current_round - 1
+                          ? 'bg-blue-500'
+                          : 'bg-secondary-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-6">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{competition.user_score}</div>
+                  <div className="text-xs text-secondary-600">You</div>
+                </div>
+                <div className="text-secondary-400">VS</div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{competition.ai_score}</div>
+                  <div className="text-xs text-secondary-600">AI</div>
+                </div>
+                <div className="flex items-center space-x-2 text-lg font-mono">
+                  <Clock className="h-5 w-5 text-orange-500" />
+                  <span className={competition.time_remaining < 30 ? 'text-red-600' : 'text-secondary-900'}>
+                    {formatTime(competition.time_remaining)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Schema Display */}
+          {competition.schema_ddl && (
+            <div className="mb-8">
+              <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                  <Database className="h-5 w-5 mr-2" />
+                  Database Schema
+                </h3>
+                <div className="bg-gray-50 p-4 rounded-lg border">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto">
+                    {competition.schema_ddl}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Question and Answer */}
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-2">Question</h3>
+              <p className="text-secondary-700 bg-secondary-50 p-4 rounded-lg">
+                {competition.current_question}
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-secondary-700 mb-2">
+                Your SQL Query
+              </label>
+              <Textarea
+                value={competition.user_query}
+                onChange={(e) => setCompetition(prev => ({ ...prev, user_query: e.target.value }))}
+                placeholder="Enter your SQL query here..."
+                rows={8}
+                className="font-mono"
+              />
+            </div>
+
+            <div className="flex justify-between items-center">
+              <div className="text-sm text-secondary-600">
+                Time remaining: {formatTime(competition.time_remaining)}
+              </div>
+              <Button 
+                onClick={() => handleSubmitAnswer()}
+                disabled={isLoading || !competition.user_query.trim()}
+              >
+                {isLoading ? (
+                  'Submitting...'
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Submit Answer
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Query Results Display */}
+          {competition.rounds_data.length > 0 && competition.rounds_data[competition.rounds_data.length - 1] && (
+            <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Table className="h-5 w-5 mr-2" />
+                Query Results
+              </h3>
+              
+              {/* Show the latest round results */}
+              {(() => {
+                const latestRound = competition.rounds_data[competition.rounds_data.length - 1];
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* User Query Result */}
+                      <div className={`p-4 rounded-lg border-2 ${latestRound.user_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                        <h4 className="font-semibold mb-2 flex items-center">
+                          {latestRound.user_correct ? (
+                            <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                          ) : (
+                            <X className="h-4 w-4 mr-1 text-red-600" />
+                          )}
+                          Your Query
+                        </h4>
+                        <pre className="text-sm bg-white p-2 rounded border">
+                          {latestRound.user_query}
+                        </pre>
+                        {/* Here you would show the actual query results when available */}
+                        <TableDataViewer 
+                          tables={latestRound.user_query_results || []} 
+                          className="mt-2" 
+                        />
+                      </div>
+
+                      {/* AI Query Result */}
+                      <div className={`p-4 rounded-lg border-2 ${latestRound.ai_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                        <h4 className="font-semibold mb-2 flex items-center">
+                          {latestRound.ai_correct ? (
+                            <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                          ) : (
+                            <X className="h-4 w-4 mr-1 text-red-600" />
+                          )}
+                          AI Query
+                        </h4>
+                        <pre className="text-sm bg-white p-2 rounded border">
+                          {latestRound.ai_query}
+                        </pre>
+                        {/* Here you would show the actual AI query results when available */}
+                        <TableDataViewer 
+                          tables={latestRound.ai_query_results || []} 
+                          className="mt-2" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Explanation */}
+                    {latestRound.explanation && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-semibold mb-2 text-blue-800">Explanation</h4>
+                        <p className="text-blue-700">{latestRound.explanation}</p>
+                      </div>
+                    )}
+
+                    {/* Correct Answer */}
+                    {latestRound.correct_answer && !latestRound.user_correct && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <h4 className="font-semibold mb-2 text-green-800">Correct Answer</h4>
+                        <pre className="text-sm bg-white p-2 rounded border text-green-700">
+                          {latestRound.correct_answer}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Explanation Modal */}
+      {showExplanation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full m-4 p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <XCircle className="h-6 w-6 text-red-500" />
+              <h3 className="text-lg font-semibold">Incorrect Answer</h3>
+            </div>
+            <p className="text-secondary-700 mb-6">{currentExplanation}</p>
+            <div className="flex justify-end">
+              <Button onClick={() => setShowExplanation(false)}>
+                Continue
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <UpgradeModal 
+            isOpen={isModalOpen} 
+            onClose={hideUpgradeModal}
+            onUpgrade={() => {}}
+            feature="competitions"
+            currentPlan={subscription?.plan?.name || 'free'}
+          />
     </div>
   );
 };

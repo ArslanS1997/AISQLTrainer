@@ -4,7 +4,9 @@ import {
   AIModel,  // Add this import
   PlanName  // Also import this if needed
 } from '../types';
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:10000';
+
+console.log('Backend URL:', BACKEND_URL); // Add this for debugging
 
 // Types
 export interface SQLSchemaRequest {
@@ -98,6 +100,122 @@ export interface SubscriptionUsage {
 export interface Subscription {
   plan: SubscriptionPlan;
   usage: SubscriptionUsage;
+}
+
+// Add these interfaces
+export interface CompetitionQuestion {
+  round: number;
+  question: string;
+  difficulty: string;
+}
+
+export interface CompetitionStartRequest {
+  difficulty: string;
+}
+
+export interface CompetitionStartResponse {
+  competition_id: string;
+  difficulty: string;
+  schema_ddl: string;
+  questions: CompetitionQuestion[];  // ADD THIS - All 5 questions at start
+  total_rounds: number;
+  current_round: number;
+  time_limit: number;
+  ai_time_limit: number;
+  started_at: string;
+  expires_at: string;
+  status: string;
+}
+
+export interface CompetitionQuestionRequest {
+  competition_id: string;
+}
+
+export interface CompetitionQuestionResponse {
+  competition_id: string;
+  round: number;
+  question: string;
+  time_remaining: number;
+  schema_ddl: string;
+}
+
+export interface CompetitionSubmitRequest {
+  competition_id: string;
+  round: number;
+  user_query: string;
+}
+
+export interface CompetitionSubmitResponse {
+  success: boolean;
+  round: number;
+  user_correct: boolean;
+  ai_correct: boolean;
+  ai_query: string;
+  user_points: number;
+  ai_points: number;
+  explanation: string;
+  correct_answer: string;
+  next_round?: number;
+  competition_completed: boolean;
+  user_query_results?: any[]; // ADD THIS
+  ai_query_results?: any[];   // ADD THIS
+}
+
+export interface CompetitionStatusRequest {
+  competition_id: string;
+}
+
+export interface CompetitionStatusResponse {
+  competition_id: string;
+  status: string;
+  current_round: number;
+  total_rounds: number;
+  user_score: number;
+  ai_score: number;
+  time_remaining: number;
+  questions: CompetitionQuestion[];  // ADD THIS - Include all questions
+  schema_ddl: string;
+}
+
+export interface CompetitionResultRequest {
+  competition_id: string;
+}
+
+export interface CompetitionResultResponse {
+  competition_id: string;
+  final_result: string;
+  user_score: number;
+  ai_score: number;
+  rounds_data: any[];
+  can_get_certificate: boolean;
+  certificate_message: string;
+  schema_ddl: string;
+  questions: CompetitionQuestion[];  // ADD THIS - For review purposes
+}
+
+export interface ChangePlanRequest {
+  new_plan: string;
+  billing_cycle: string;
+}
+
+export interface ChangePlanResponse {
+  success: boolean;
+  message: string;
+  effective_date: string;
+  proration_amount?: number;
+  next_billing_amount: number;
+  plan_changed_to: string;
+}
+
+export interface PlanChangePreview {
+  current_plan: string;
+  new_plan: string;
+  is_upgrade: boolean;
+  effective_immediately: boolean;
+  effective_date: string;
+  proration_amount: number;
+  next_billing_amount: number;
+  message: string;
 }
 
 // API Client
@@ -326,45 +444,65 @@ class APIClient {
     }
   }
 
-  async startCompetition(data: {
-    difficulty: string;
-    time_limit: number;
-  }): Promise<{ data?: any; error?: string }> {
+  async startCompetition(data: CompetitionStartRequest): Promise<{ data?: CompetitionStartResponse; error?: string }> {
     return this.request('/api/competition/start', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async submitCompetition(data: {
-    competition_id: string;
-    query: string;
-  }): Promise<{ data?: any; error?: string }> {
+  async getCompetitionQuestion(data: CompetitionQuestionRequest): Promise<{ data?: CompetitionQuestionResponse; error?: string }> {
+    return this.request('/api/competition/question', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async submitCompetitionAnswer(data: CompetitionSubmitRequest): Promise<{ data?: CompetitionSubmitResponse; error?: string }> {
     return this.request('/api/competition/submit', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async getCompetitionStats(): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/competition/stats');
-  }
-
-  async getAIResponse(data: {
-    competition_id: string;
-    question: string;
-    schema_ddl: string;
-    difficulty: string;
-    time_limit: number;
-  }): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/competition/ai-response', {
+  async getCompetitionStatus(data: CompetitionStatusRequest): Promise<{ data?: CompetitionStatusResponse; error?: string }> {
+    return this.request('/api/competition/status', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
+  async getCompetitionResult(data: CompetitionResultRequest): Promise<{ data?: CompetitionResultResponse; error?: string }> {
+    return this.request('/api/competition/result', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Keep existing methods
+  async getCompetitionStats(): Promise<{ data?: any; error?: string }> {
+    return this.request('/api/competition/stats');
+  }
+
   async getCompetitionHistory(): Promise<{ data?: any; error?: string }> {
     return this.request('/api/competition/history');
+  }
+
+  async refreshSubscription(): Promise<{ data?: any; error?: string }> {
+    return this.request('/api/stripe/refresh-subscription', {
+      method: 'POST',
+    });
+  }
+
+  async getPlanChangePreview(newPlan: string, billingCycle: string = 'monthly'): Promise<{ data?: PlanChangePreview; error?: string }> {
+    return this.request(`/api/stripe/plan-change-preview?new_plan=${newPlan}&billing_cycle=${billingCycle}`);
+  }
+
+  async changePlan(data: ChangePlanRequest): Promise<{ data?: ChangePlanResponse; error?: string }> {
+    return this.request('/api/stripe/change-plan', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 

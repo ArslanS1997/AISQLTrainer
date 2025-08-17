@@ -162,32 +162,110 @@ class Competition(BaseModel):
     class Config:
         from_attributes = True
 
+# Competition Question Model
+class CompetitionQuestion(BaseModel):
+    round: int
+    question: str
+    difficulty: str
+
+# Updated Competition Schemas
 class CompetitionStartRequest(BaseModel):
     difficulty: str = "beginner"
-    time_limit: int = 300  # seconds
 
-class CompetitionStartResponse(Competition):
-    time_limit: int
+class CompetitionStartResponse(BaseModel):
+    competition_id: str
+    difficulty: str
+    schema_ddl: str
+    questions: List[CompetitionQuestion]  # ADD THIS - All 5 questions at start
+    total_rounds: int
+    current_round: int
+    time_limit: int  # Total time for user (3 minutes = 180 seconds)
+    ai_time_limit: int  # Time for AI per question (30 seconds)
     started_at: datetime
     expires_at: datetime
+    status: str
+
+class CompetitionQuestionRequest(BaseModel):
+    competition_id: str
+
+class CompetitionQuestionResponse(BaseModel):
+    competition_id: str
+    round: int
+    question: str
+    time_remaining: int
+    schema_ddl: str  # Frontend needs schema for display
 
 class CompetitionSubmitRequest(BaseModel):
     competition_id: str
-    query: str
+    round: int
+    user_query: str
 
 class CompetitionSubmitResponse(BaseModel):
     success: bool
-    score: int
-    time_taken: int  # seconds
-    rank: Optional[int] = None
-    feedback: str
+    round: int
+    user_correct: bool
+    ai_correct: bool
+    ai_query: str  # Show AI's query to user
+    user_points: int
+    ai_points: int
+    explanation: str
+    correct_answer: str
+    next_round: Optional[int] = None
+    competition_completed: bool
 
-class CompetitionHistoryResponse(Competition):
-    score: int
-    rank: int
-    time_taken: int
-    completed_at: datetime
+class CompetitionIsCorrectRequest(BaseModel):
+    competition_id: str
+    round: int
+    question: str
+    user_query: str
+    ai_query: str
+    schema_ddl: str
+
+class CompetitionIsCorrectResponse(BaseModel):
+    user_correct: bool
+    ai_correct: bool
+    explanation: str
+    correct_answer: str
+    user_points: int
+    ai_points: int
+
+class CompetitionStatusRequest(BaseModel):
+    competition_id: str
+
+class CompetitionStatusResponse(BaseModel):
+    competition_id: str
+    status: str
+    current_round: int
+    total_rounds: int
+    user_score: int
+    ai_score: int
+    time_remaining: int
+    questions: List[CompetitionQuestion]  # ADD THIS - Include all questions
+    schema_ddl: str
+
+class CompetitionResultRequest(BaseModel):
+    competition_id: str
+
+class CompetitionResultResponse(BaseModel):
+    competition_id: str
+    final_result: str  # win, lose, tie
+    user_score: int
+    ai_score: int
+    rounds_data: List[Dict[str, Any]]
+    can_get_certificate: bool
+    certificate_message: str
+    schema_ddl: str
+    questions: List[CompetitionQuestion]  # ADD THIS - For review purposes
+
+class CompetitionHistoryResponse(BaseModel):
+    competition_id: str
     difficulty: str
+    user_score: int
+    ai_score: int
+    result: str
+    completed_at: datetime
+    total_time_taken: int
+    questions: List[CompetitionQuestion]  # ADD THIS - For history review
 
 # ============================================================================
 # DASHBOARD SCHEMAS

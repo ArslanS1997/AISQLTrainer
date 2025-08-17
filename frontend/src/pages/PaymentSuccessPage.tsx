@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { apiClient } from '../utils/api';
-import { CheckCircle, Loader, AlertCircle } from 'lucide-react';
+import { CheckCircle, Loader, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../components/Button';
 
 export const PaymentSuccessPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { subscription, refetchSubscription } = useSubscription();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [subscriptionInfo, setSubscriptionInfo] = useState<any>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const sessionId = searchParams.get('session_id');
 
@@ -22,63 +26,109 @@ export const PaymentSuccessPage: React.FC = () => {
     }
   }, [sessionId, user]);
 
-  const checkSubscriptionStatus = async () => {
+  const checkSubscriptionStatus = async (isRetry = false) => {
     try {
-      // Wait a moment for webhook to process
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!isRetry) {
+        // Wait for webhook to process
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
       
-      // Get updated subscription info
+      // Try to refresh subscription from Stripe
+      await apiClient.refreshSubscription();
+      
+      // Refetch from context
+      await refetchSubscription();
+      
+      // Check if subscription is updated
+      const response = await apiClient.getUserSubscription();
+      
+      if (response.data?.plan?.name !== 'free') {
+        setSubscriptionInfo(response.data);
+        setStatus('success');
+        console.log('✅ Payment successful, subscription activated!');
+      } else if (retryCount < 3) {
+        // Retry up to 3 times with increasing delays
+        const delay = (retryCount + 1) * 2000; // 2s, 4s, 6s
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          checkSubscriptionStatus(true);
+        }, delay);
+      } else {
+        setStatus('error');
+      }
+    } catch (error) {
+      console.error('Failed to check subscription status:', error);
+      if (retryCount < 3) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          checkSubscriptionStatus(true);
+        }, 2000);
+      } else {
+        setStatus('error');
+      }
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await apiClient.refreshSubscription();
+      await refetchSubscription();
       const response = await apiClient.getUserSubscription();
       
       if (response.data?.plan?.name !== 'free') {
         setSubscriptionInfo(response.data);
         setStatus('success');
       } else {
-        // Still on free plan - payment might not have processed yet
-        // Try again after a longer delay
-        setTimeout(async () => {
-          const retryResponse = await apiClient.getUserSubscription();
-          if (retryResponse.data?.plan?.name !== 'free') {
-            setSubscriptionInfo(retryResponse.data);
-            setStatus('success');
-          } else {
-            setStatus('error');
-          }
-        }, 3000);
+        alert('Subscription is still processing. Please wait a few more minutes or contact support.');
       }
     } catch (error) {
-      console.error('Failed to check subscription status:', error);
-      setStatus('error');
+      console.error('Manual refresh failed:', error);
+      alert('Failed to refresh subscription. Please try again or contact support.');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Processing Payment...</h2>
-          <p className="text-gray-600">Please wait while we activate your subscription.</p>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+          <Loader className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Processing Payment</h2>
+          <p className="text-gray-600 mb-4">
+            We're confirming your payment and activating your subscription...
+          </p>
+          <p className="text-sm text-gray-500">
+            This usually takes 30-60 seconds. Attempt {retryCount + 1}/4
+          </p>
         </div>
       </div>
     );
   }
 
-  if (status === 'error') {
+  if (status === 'success') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md mx-auto text-center">
-          <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Processing...</h2>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+          <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Payment Successful!</h2>
           <p className="text-gray-600 mb-6">
-            Your payment is being processed. If your subscription doesn't activate shortly, please contact support.
+            Your <span className="font-semibold text-green-600">{subscriptionInfo?.plan?.name?.toUpperCase()}</span> subscription is now active.
           </p>
-          <div className="space-x-4">
-            <Button variant="outline" onClick={() => navigate('/pricing')}>
-              Back to Pricing
+          <div className="space-y-3">
+            <Button 
+              onClick={() => navigate('/main')}
+              className="w-full"
+            >
+              Start Learning with AI
             </Button>
-            <Button onClick={() => navigate('/subscription')}>
-              Check Subscription
+            <Button 
+              onClick={() => navigate('/subscription')}
+              variant="outline"
+              className="w-full"
+            >
+              Manage Subscription
             </Button>
           </div>
         </div>
@@ -87,48 +137,39 @@ export const PaymentSuccessPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md mx-auto text-center">
-        <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-6" />
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Payment Successful!</h1>
+    <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-lg shadow-lg text-center max-w-md">
+        <AlertCircle className="h-16 w-16 text-red-600 mx-auto mb-4" />
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">Payment Issue</h2>
         <p className="text-gray-600 mb-6">
-          Welcome to {subscriptionInfo?.plan?.display_name || 'your new plan'}! Your subscription is now active.
+          We're having trouble confirming your payment. This might be temporary.
         </p>
-        
-        {subscriptionInfo && (
-          <div className="bg-white rounded-lg p-6 mb-6 text-left">
-            <h3 className="font-semibold text-gray-900 mb-4">Subscription Details</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Plan:</span>
-                <span className="font-medium">{subscriptionInfo.plan.display_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Schemas per month:</span>
-                <span className="font-medium">{subscriptionInfo.plan.max_schemas_per_month}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Competitions per month:</span>
-                <span className="font-medium">{subscriptionInfo.plan.max_competitions_per_month}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Certificates:</span>
-                <span className="font-medium">
-                  {subscriptionInfo.plan.can_download_certificates ? 'Included' : 'Not included'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="space-y-3">
-          <Button className="w-full" onClick={() => navigate('/practice')}>
-            Start Practicing SQL
+          <Button 
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="w-full"
+          >
+            {isRefreshing ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                Checking...
+              </>
+            ) : (
+              'Check Payment Status'
+            )}
           </Button>
-          <Button variant="outline" className="w-full" onClick={() => navigate('/subscription')}>
-            View Subscription Details
+          <Button 
+            onClick={() => navigate('/pricing')}
+            variant="outline"
+            className="w-full"
+          >
+            Back to Pricing
           </Button>
         </div>
+        <p className="text-sm text-gray-500 mt-4">
+          If the issue persists, please contact support with session ID: {sessionId}
+        </p>
       </div>
     </div>
   );

@@ -57,6 +57,20 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     fetchSubscription();
   }, []);
 
+  // Add a method to poll for subscription updates
+  useEffect(() => {
+    // Poll every 30 seconds when on payment success page
+    const isPaymentPage = window.location.pathname.includes('payment-success');
+    
+    if (isPaymentPage) {
+      const interval = setInterval(async () => {
+        await fetchSubscription();
+      }, 30000); // Poll every 30 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, []);
+
   return (
     <SubscriptionContext.Provider value={{
       subscription,

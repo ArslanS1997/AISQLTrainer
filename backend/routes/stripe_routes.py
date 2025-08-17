@@ -11,6 +11,8 @@ from datetime import datetime
 from sqlalchemy import Column, Boolean
 import dspy
 from dotenv import load_dotenv
+from models.schemas import ChangePlanRequest, ChangePlanResponse
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -69,8 +71,8 @@ async def create_checkout_session(
                 'quantity': 1,
             }],
             mode='subscription',
-            success_url=f"{os.getenv('FRONTEND_URL')}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{os.getenv('FRONTEND_URL')}/pricing",
+            success_url=f"{os.getenv('FRONTEND_URL')}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{os.getenv('FRONTEND_URL')}/payment-failure",
             metadata={
                 'user_id': current_user.id,
                 'plan': plan,
@@ -126,40 +128,92 @@ async def check_feature_access(
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Stripe webhooks."""
+    print("🎯 Webhook received!")  # Add debug logging
+    
     payload = await request.body()
     sig_header = request.headers.get('stripe-signature')
+    
+    print(f"📝 Payload length: {len(payload)}")  # Debug
+    print(f"🔑 Signature header: {sig_header[:20] if sig_header else 'None'}...")  # Debug
+    
+    if not STRIPE_WEBHOOK_SECRET:
+        print("❌ STRIPE_WEBHOOK_SECRET not set!")
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
     
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
-    except ValueError:
+        print(f"✅ Event verified: {event['type']}")  # Debug
+    except ValueError as e:
+        print(f"❌ Invalid payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError:
+    except stripe.error.SignatureVerificationError as e:
+        print(f"❌ Invalid signature: {e}")
         raise HTTPException(status_code=400, detail="Invalid signature")
     
     # Handle the event
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        await handle_successful_payment(session, db)
+    try:
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            await handle_successful_payment(session, db)
+            print("✅ Handled checkout.session.completed")
+        
+        elif event['type'] == 'invoice.payment_succeeded':
+            invoice = event['data']['object']
+            await handle_invoice_payment_succeeded(invoice, db)
+            print("✅ Handled invoice.payment_succeeded")
+        
+        elif event['type'] == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            await handle_subscription_deleted(subscription, db)
+            print("✅ Handled customer.subscription.deleted")
+        
+        elif event['type'] == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            await handle_subscription_updated(subscription, db)
+            print("✅ Handled customer.subscription.updated")
+
+        elif event['type'] == 'invoice.upcoming':
+            invoice = event['data']['object']
+            await handle_upcoming_invoice(invoice, db)
+            print("✅ Handled invoice.upcoming")
+        
+        else:
+            print(f"⚠️ Unhandled event type: {event['type']}")
     
-    elif event['type'] == 'invoice.payment_succeeded':
-        invoice = event['data']['object']
-        await handle_invoice_payment_succeeded(invoice, db)
-    
-    elif event['type'] == 'customer.subscription.deleted':
-        subscription = event['data']['object']
-        await handle_subscription_deleted(subscription, db)
+    except Exception as e:
+        print(f"❌ Error processing event: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing event: {str(e)}")
     
     return {'status': 'success'}
 
 async def handle_successful_payment(session, db: Session):
     """Handle successful checkout session."""
-    user_id = session['metadata']['user_id']
-    plan = session['metadata']['plan']
+    print(f"🎯 Processing checkout.session.completed for session: {session['id']}")
+    
+    user_id = session['metadata'].get('user_id')
+    plan = session['metadata'].get('plan')
+    
+    if not user_id or not plan:
+        print(f"❌ Missing metadata: user_id={user_id}, plan={plan}")
+        raise ValueError("Missing required metadata")
+    
+    print(f"👤 User ID: {user_id}, Plan: {plan}")
     
     # Get the subscription from Stripe
-    stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
+    if session.get('subscription'):
+        stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
+        print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
+    else:
+        print("❌ No subscription found in session")
+        raise ValueError("No subscription found in checkout session")
+    
+    # Find user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        print(f"❌ User not found: {user_id}")
+        raise ValueError(f"User not found: {user_id}")
     
     # Create or update subscription record
     subscription = db.query(Subscription).filter(
@@ -167,35 +221,69 @@ async def handle_successful_payment(session, db: Session):
     ).first()
     
     if subscription:
+        print(f"📝 Updating existing subscription: {subscription.id}")
         subscription.stripe_subscription_id = stripe_subscription.id
         subscription.status = stripe_subscription.status
         subscription.plan = plan
         subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
     else:
+        print(f"🆕 Creating new subscription for user: {user_id}")
         subscription = Subscription(
             user_id=user_id,
             stripe_subscription_id=stripe_subscription.id,
             status=stripe_subscription.status,
             plan=plan,
-            current_period_end=datetime.fromtimestamp(stripe_subscription.current_period_end)
+            current_period_end=datetime.fromtimestamp(stripe_subscription.current_period_end),
+            cancel_at_period_end=stripe_subscription.cancel_at_period_end
         )
         db.add(subscription)
     
-    db.commit()
+    try:
+        db.commit()
+        print(f"✅ Subscription saved successfully: {subscription.plan}")
+    except Exception as e:
+        print(f"❌ Database error: {e}")
+        db.rollback()
+        raise
 
 async def handle_invoice_payment_succeeded(invoice, db: Session):
-    """Handle successful invoice payment (renewals)."""
-    stripe_subscription_id = invoice['subscription']
+    """Handle successful invoice payment (recurring)."""
+    print(f"🎯 Processing invoice.payment_succeeded for invoice: {invoice['id']}")
     
+    subscription_id = invoice.get('subscription')
+    if not subscription_id:
+        print("⚠️ No subscription found in invoice")
+        return
+    
+    # Get subscription from Stripe
+    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+    customer_id = stripe_subscription.customer
+    
+    # Find user by Stripe customer ID
+    user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+    if not user:
+        print(f"❌ User not found for customer: {customer_id}")
+        return
+    
+    # Update subscription status
     subscription = db.query(Subscription).filter(
-        Subscription.stripe_subscription_id == stripe_subscription_id
+        Subscription.user_id == user.id
     ).first()
     
     if subscription:
-        stripe_subscription = stripe.Subscription.retrieve(stripe_subscription_id)
-        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        print(f"📝 Updating subscription status to: {stripe_subscription.status}")
         subscription.status = stripe_subscription.status
-        db.commit()
+        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        
+        try:
+            db.commit()
+            print("✅ Subscription updated successfully")
+        except Exception as e:
+            print(f"❌ Database error: {e}")
+            db.rollback()
+            raise
 
 async def handle_subscription_deleted(stripe_subscription, db: Session):
     """Handle subscription cancellation."""
@@ -206,6 +294,49 @@ async def handle_subscription_deleted(stripe_subscription, db: Session):
     if subscription:
         subscription.status = 'canceled'
         db.commit()
+
+async def handle_subscription_updated(stripe_subscription, db: Session):
+    """Handle subscription updates (plan changes, etc.)."""
+    print(f"🔄 Processing subscription update: {stripe_subscription['id']}")
+    
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == stripe_subscription['id']
+    ).first()
+    
+    if not subscription:
+        print(f"❌ Local subscription not found: {stripe_subscription['id']}")
+        return
+    
+    # Update subscription details
+    subscription.status = stripe_subscription['status']
+    subscription.current_period_end = datetime.fromtimestamp(stripe_subscription['current_period_end'])
+    subscription.cancel_at_period_end = stripe_subscription['cancel_at_period_end']
+    
+    # Extract plan from the subscription items
+    if stripe_subscription['items']['data']:
+        price_id = stripe_subscription['items']['data'][0]['price']['id']
+        
+        # Map price_id back to plan name
+        plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
+        new_plan = plan_mapping.get(price_id, subscription.plan)
+        
+        if new_plan != subscription.plan:
+            print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
+            subscription.plan = new_plan
+    
+    try:
+        db.commit()
+        print("✅ Subscription update saved")
+    except Exception as e:
+        print(f"❌ Database error: {e}")
+        db.rollback()
+        raise
+
+async def handle_upcoming_invoice(invoice, db: Session):
+    """Handle upcoming invoice notifications."""
+    print(f"📧 Upcoming invoice: {invoice['id']}")
+    # You could send email notifications here
+    # or update UI to show upcoming charges
 
 @router.post("/cancel-subscription")
 async def cancel_subscription(
@@ -242,5 +373,261 @@ async def reactivate_subscription(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to reactivate subscription")
+
+@router.post("/refresh-subscription")
+async def refresh_subscription(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Manually refresh subscription status from Stripe."""
+    print(f"🔄 Refreshing subscription for user: {current_user.id}")
+    
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id
+    ).first()
+    
+    if not subscription or not subscription.stripe_subscription_id:
+        return {"status": "no_subscription"}
+    
+    try:
+        # Get latest from Stripe
+        stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+        
+        # Update local record
+        subscription.status = stripe_subscription.status
+        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        
+        db.commit()
+        
+        service = SubscriptionService(db)
+        user_subscription = service.get_user_subscription(current_user.id)
+        
+        print(f"✅ Subscription refreshed: {user_subscription}")
+        return user_subscription
+        
+    except Exception as e:
+        print(f"❌ Error refreshing subscription: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh subscription")
+
+@router.post("/change-plan")
+async def change_plan(
+    request: ChangePlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Change user's subscription plan with proper proration."""
+    print(f"🔄 Plan change requested: {current_user.id} -> {request.new_plan}")
+    
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id
+    ).first()
+    
+    if not subscription or not subscription.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="No active subscription found")
+    
+    current_plan = subscription.plan
+    new_plan = request.new_plan
+    
+    # Handle downgrade to free (cancel subscription)
+    if new_plan == 'free':
+        return await handle_downgrade_to_free(subscription, db)
+    
+    # Handle upgrade/downgrade between paid plans
+    if current_plan == 'free':
+        # Free to paid - create new subscription
+        return await handle_upgrade_from_free(new_plan, request.billing_cycle, current_user, db)
+    else:
+        # Paid to paid - modify existing subscription
+        return await handle_plan_change(subscription, new_plan, request.billing_cycle, db)
+
+async def handle_downgrade_to_free(subscription: Subscription, db: Session):
+    """Handle downgrade to free plan."""
+    try:
+        # Cancel subscription at period end
+        stripe_subscription = stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        # Update local record
+        subscription.cancel_at_period_end = True
+        subscription.status = stripe_subscription.status
+        db.commit()
+        
+        return ChangePlanResponse(
+            success=True,
+            message=f"Your subscription will be canceled at the end of your current billing period ({subscription.current_period_end.strftime('%B %d, %Y')}). You'll continue to have access until then.",
+            effective_date=subscription.current_period_end.isoformat(),
+            next_billing_amount=0.0,
+            plan_changed_to="free"
+        )
+        
+    except Exception as e:
+        print(f"❌ Error downgrading to free: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process downgrade")
+
+async def handle_upgrade_from_free(new_plan: str, billing_cycle: str, current_user: User, db: Session):
+    """Handle upgrade from free to paid plan."""
+    # This would redirect to checkout - similar to initial subscription
+    price_key = f"{new_plan}_{billing_cycle}"
+    price_id = PRICE_IDS.get(price_key)
+    
+    if not price_id:
+        raise HTTPException(status_code=400, detail="Invalid plan or billing cycle")
+    
+    return {
+        "success": False,
+        "redirect_to_checkout": True,
+        "message": "Please complete the checkout process to upgrade your plan",
+        "checkout_url": f"/api/stripe/create-checkout-session"  # You'd call this endpoint
+    }
+
+async def handle_plan_change(subscription: Subscription, new_plan: str, billing_cycle: str, db: Session):
+    """Handle plan change between paid plans."""
+    try:
+        # Get current Stripe subscription
+        stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+        
+        # Get new price ID
+        price_key = f"{new_plan}_{billing_cycle}"
+        new_price_id = PRICE_IDS.get(price_key)
+        
+        if not new_price_id:
+            raise HTTPException(status_code=400, detail="Invalid plan or billing cycle")
+        
+        current_plan = subscription.plan
+        
+        # Calculate if this is an upgrade or downgrade
+        plan_hierarchy = {'free': 0, 'pro': 1, 'max': 2}
+        is_upgrade = plan_hierarchy.get(new_plan, 0) > plan_hierarchy.get(current_plan, 0)
+        
+        if is_upgrade:
+            # Immediate upgrade with proration
+            updated_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                items=[{
+                    'id': stripe_subscription['items']['data'][0]['id'],
+                    'price': new_price_id,
+                }],
+                proration_behavior='create_prorations',  # Charge immediately for upgrade
+            )
+            effective_message = "Your plan has been upgraded immediately."
+            effective_date = datetime.now().isoformat()
+            
+        else:
+            # Downgrade at period end to avoid refunds
+            updated_subscription = stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                items=[{
+                    'id': stripe_subscription['items']['data'][0]['id'],
+                    'price': new_price_id,
+                }],
+                proration_behavior='none',  # No proration for downgrades
+                billing_cycle_anchor='unchanged'  # Keep current billing cycle
+            )
+            effective_message = f"Your plan will be downgraded at the end of your current billing period ({subscription.current_period_end.strftime('%B %d, %Y')})."
+            effective_date = subscription.current_period_end.isoformat()
+        
+        # Update local subscription
+        subscription.plan = new_plan
+        subscription.status = updated_subscription.status
+        db.commit()
+        
+        # Get pricing info
+        new_price = stripe.Price.retrieve(new_price_id)
+        next_billing_amount = new_price.unit_amount / 100  # Convert cents to dollars
+        
+        return ChangePlanResponse(
+            success=True,
+            message=effective_message,
+            effective_date=effective_date,
+            next_billing_amount=next_billing_amount,
+            plan_changed_to=new_plan
+        )
+        
+    except Exception as e:
+        print(f"❌ Error changing plan: {e}")
+        raise HTTPException(status_code=500, detail="Failed to change plan")
+
+@router.get("/plan-change-preview")
+async def get_plan_change_preview(
+    new_plan: str,
+    billing_cycle: str = 'monthly',
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get preview of plan change including proration details."""
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id
+    ).first()
+    
+    if not subscription:
+        raise HTTPException(status_code=400, detail="No subscription found")
+    
+    current_plan = subscription.plan
+    
+    # Get pricing info
+    price_key = f"{new_plan}_{billing_cycle}"
+    new_price_id = PRICE_IDS.get(price_key)
+    
+    if not new_price_id:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    new_price = stripe.Price.retrieve(new_price_id)
+    new_amount = new_price.unit_amount / 100
+    
+    plan_hierarchy = {'free': 0, 'pro': 1, 'max': 2}
+    is_upgrade = plan_hierarchy.get(new_plan, 0) > plan_hierarchy.get(current_plan, 0)
+    
+    if new_plan == 'free':
+        return {
+            "current_plan": current_plan,
+            "new_plan": new_plan,
+            "is_upgrade": False,
+            "effective_immediately": False,
+            "effective_date": subscription.current_period_end.isoformat(),
+            "proration_amount": 0,
+            "next_billing_amount": 0,
+            "message": "Your subscription will be canceled at the end of the current billing period."
+        }
+    
+    try:
+        # Get proration preview from Stripe
+        upcoming_invoice = stripe.Invoice.upcoming(
+            customer=subscription.user.stripe_customer_id,
+            subscription=subscription.stripe_subscription_id,
+            subscription_items=[{
+                'id': stripe.Subscription.retrieve(subscription.stripe_subscription_id)['items']['data'][0]['id'],
+                'price': new_price_id,
+            }],
+            proration_behavior='create_prorations' if is_upgrade else 'none'
+        )
+        
+        proration_amount = upcoming_invoice.amount_due / 100 if upcoming_invoice.amount_due > 0 else 0
+        
+        return {
+            "current_plan": current_plan,
+            "new_plan": new_plan,
+            "is_upgrade": is_upgrade,
+            "effective_immediately": is_upgrade,
+            "effective_date": datetime.now().isoformat() if is_upgrade else subscription.current_period_end.isoformat(),
+            "proration_amount": proration_amount,
+            "next_billing_amount": new_amount,
+            "message": f"{'Upgrade' if is_upgrade else 'Downgrade'} to {new_plan.upper()} plan"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting preview: {e}")
+        return {
+            "current_plan": current_plan,
+            "new_plan": new_plan,
+            "is_upgrade": is_upgrade,
+            "effective_immediately": is_upgrade,
+            "effective_date": datetime.now().isoformat() if is_upgrade else subscription.current_period_end.isoformat(),
+            "proration_amount": 0,
+            "next_billing_amount": new_amount,
+            "message": f"{'Upgrade' if is_upgrade else 'Downgrade'} to {new_plan.upper()} plan"
+        }
 
 
