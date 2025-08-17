@@ -431,26 +431,26 @@ async def handle_successful_payment(session, db: Session):
 async def handle_invoice_payment_succeeded(invoice, db: Session):
     """Handle successful invoice payment (recurring)."""
     print(f"🎯 Processing invoice.payment_succeeded for invoice: {invoice['id']}")
-    
+
     subscription_id = invoice.get('subscription')
     if not subscription_id:
         print("⚠️ No subscription found in invoice")
         return
-    
+
     try:
         # Get subscription from Stripe
         stripe_subscription = stripe.Subscription.retrieve(subscription_id)
         customer_id = stripe_subscription.customer
-        
+
         # Get customer details from Stripe
         stripe_customer = stripe.Customer.retrieve(customer_id)
         customer_email = stripe_customer.email
-        
+
         print(f"🔍 Looking for customer: {customer_id}, email: {customer_email}")
-        
+
         # Try to find user by customer ID first
         user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
-        
+
         if not user:
             print(f"❌ User not found by customer ID: {customer_id}")
             # Try to find by email
@@ -463,17 +463,23 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
                 print(f"💳 Updated user's Stripe customer ID: {customer_id}")
             else:
                 print(f"❌ User not found by email: {customer_email}")
+                # Optionally, create a new user record here if your business logic allows
+                # For now, just log and return
+                print(f"❌ Cannot process invoice.payment_succeeded: No matching user for Stripe customer {customer_id} or email {customer_email}")
                 return
-        
+
         # Find or create subscription
-    subscription = db.query(Subscription).filter(
+        subscription = db.query(Subscription).filter(
             Subscription.stripe_subscription_id == subscription_id
-    ).first()
-    
+        ).first()
+
         if not subscription:
             print(f"❌ No local subscription found for: {subscription_id}")
+            # Optionally, create a new subscription record here if your business logic allows
+            # For now, just log and return
+            print(f"❌ Cannot process invoice.payment_succeeded: No matching subscription for Stripe subscription {subscription_id}")
             return
-        
+
         # FIXED: Use Stripe's actual current_period_end instead of fixed calculation
         try:
             current_period_end = safe_timestamp_to_datetime(stripe_subscription.current_period_end)
@@ -481,15 +487,15 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
         except Exception as e:
             print(f"⚠️ Failed to parse Stripe timestamp, using fallback: {e}")
             current_period_end = datetime.utcnow() + timedelta(days=30)
-        
+
         # Update subscription with new period
         subscription.current_period_end = current_period_end
         subscription.status = 'active'
         subscription.updated_at = datetime.utcnow()
-        
+
         db.commit()
         print(f"✅ Updated subscription period end to: {current_period_end}")
-        
+
     except Exception as e:
         print(f"❌ Error in handle_invoice_payment_succeeded: {e}")
         db.rollback()
