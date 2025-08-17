@@ -43,9 +43,8 @@ app = FastAPI(
 # CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[ development
- Your render backend
-        os.environ.get('FRONTEND_URL', "http://localhost:3000")  # Fallback
+    allow_origins=[
+        os.environ.get('FRONTEND_URL')  # Fallback
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
