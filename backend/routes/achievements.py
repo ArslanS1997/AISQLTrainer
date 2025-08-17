@@ -380,23 +380,27 @@ async def get_user_certificates(
     
     if not feature_check["allowed"]:
         print(f"DEBUG: User {user_id} doesn't have premium access")
-        raise HTTPException(
-            status_code=403, 
-            detail="Premium subscription required to access certificates"
-        )
+        # Instead of throwing an error, return a response indicating upgrade needed
+        return {
+            "certificates": [],
+            "requires_upgrade": True,
+            "upgrade_message": "Upgrade to Pro or Max to access your certificates and download them as PDFs",
+            "user_plan": feature_check.get("current_plan", "free"),
+            "available_features": ["View certificates", "Earn certificates through practice"],
+            "premium_features": ["Download certificates as PDF", "LinkedIn integration", "Master certificate eligibility"]
+        }
     
+    # Rest of the existing code for premium users...
     # Get all user's sessions
     sessions = db.query(DBSession).filter(
-        DBSession.user_id == user_id
+        DBSession.user_id == user_id,
+        DBSession.completed_at.isnot(None)
     ).all()
     
-    print(f"DEBUG: Found {len(sessions)} sessions for user {user_id}")
-    
     certificates = []
+    
     for session in sessions:
-        print(f"DEBUG: Processing session {session.id}")
-        print(f"DEBUG: Session queries: {session.queries}")
-        print(f"DEBUG: Session difficulty: {session.difficulty}")
+        print(f"DEBUG: Processing session {session.id} - Difficulty: {session.difficulty}")
         
         if session.queries and len(session.queries) > 0:
             # Calculate score percentage with better debugging
@@ -445,7 +449,11 @@ async def get_user_certificates(
             print(f"DEBUG: Session {session.id} has no queries")
     
     print(f"DEBUG: Returning {len(certificates)} certificates")
-    return {"certificates": certificates}
+    return {
+        "certificates": certificates,
+        "requires_upgrade": False,
+        "user_plan": feature_check.get("current_plan", "pro")
+    }
 
 @router.get("/certificate/{session_id}")
 async def get_certificate(
