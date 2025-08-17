@@ -309,6 +309,19 @@ class SubscriptionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class ChangePlanRequest(BaseModel):
+    new_plan: str  # 'pro' or 'max' or 'free'
+    billing_cycle: str = 'monthly'  # 'monthly' or 'yearly'
+
+class ChangePlanResponse(BaseModel):
+    success: bool
+    message: str
+    effective_date: str
+    proration_amount: Optional[float] = None
+    next_billing_amount: float
+    plan_changed_to: str
+
 class CancelSubscriptionResponse(BaseModel):
     success: bool
     message: str
