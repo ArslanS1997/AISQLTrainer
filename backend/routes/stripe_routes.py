@@ -116,7 +116,7 @@ async def create_checkout_session(
     db = Depends(get_db)
 ):
     """Create Stripe checkout session."""
-    
+
     plan = request.plan.lower()
     billing_cycle = request.billing_cycle.lower()
     promo_code = request.promo_code  # GET PROMO CODE FROM REQUEST
@@ -232,9 +232,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         print("🎯 Webhook received!")
         
-        payload = await request.body()
-        sig_header = request.headers.get('stripe-signature')
-        
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature')
+    
         print(f"📝 Payload length: {len(payload)}")
         print(f"🔑 Signature header: {sig_header[:20] if sig_header else 'None'}...")
         
@@ -242,43 +242,43 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             print("❌ STRIPE_WEBHOOK_SECRET not set!")
             raise HTTPException(status_code=500, detail="Webhook secret not configured")
         
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, STRIPE_WEBHOOK_SECRET
-            )
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
             print(f"✅ Event verified: {event['type']}")
         except ValueError as e:
             print(f"❌ Invalid payload: {e}")
             log_webhook_event("invalid_payload", {"id": "unknown"}, False, str(e))
-            raise HTTPException(status_code=400, detail="Invalid payload")
+        raise HTTPException(status_code=400, detail="Invalid payload")
         except stripe.error.SignatureVerificationError as e:
             print(f"❌ Invalid signature: {e}")
             log_webhook_event("invalid_signature", {"id": "unknown"}, False, str(e))
-            raise HTTPException(status_code=400, detail="Invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid signature")
         
         # Validate event 
         if not validate_webhook_event(event):
             print("❌ Invalid webhook event structure.")
             log_webhook_event("invalid_event_structure", event, False, "Invalid event structure")
             raise HTTPException(status_code=400, detail="Invalid webhook event structure")
-
-        # Handle the event
+    
+    # Handle the event
         try:
-            if event['type'] == 'checkout.session.completed':
-                session = event['data']['object']
-                await handle_successful_payment(session, db)
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        await handle_successful_payment(session, db)
                 print("✅ Handled checkout.session.completed")
                 log_webhook_event(event['type'], event, True)
-            
-            elif event['type'] == 'invoice.payment_succeeded':
-                invoice = event['data']['object']
-                await handle_invoice_payment_succeeded(invoice, db)
+    
+    elif event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        await handle_invoice_payment_succeeded(invoice, db)
                 print("✅ Handled invoice.payment_succeeded")
                 log_webhook_event(event['type'], event, True)
-            
-            elif event['type'] == 'customer.subscription.deleted':
-                subscription = event['data']['object']
-                await handle_subscription_deleted(subscription, db)
+    
+    elif event['type'] == 'customer.subscription.deleted':
+        subscription = event['data']['object']
+        await handle_subscription_deleted(subscription, db)
                 print("✅ Handled customer.subscription.deleted")
                 log_webhook_event(event['type'], event, True)
             
@@ -322,8 +322,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             log_webhook_event(event['type'], event, False, str(e))
             
             raise HTTPException(status_code=500, detail=f"Error processing event: {str(e)}")
-        
-        return {'status': 'success'}
+    
+    return {'status': 'success'}
         
     except Exception as e:
         print(f"❌ Webhook handler error: {e}")
@@ -343,10 +343,10 @@ async def handle_successful_payment(session, db: Session):
             raise ValueError("Missing required metadata")
         
         print(f"👤 User ID: {user_id}, Plan: {plan}")
-        
-        # Get the subscription from Stripe
+    
+    # Get the subscription from Stripe
         if session.get('subscription'):
-            stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
+    stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
             print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
         else:
             print("❌ No subscription found in session")
@@ -386,12 +386,12 @@ async def handle_successful_payment(session, db: Session):
         if not user.stripe_customer_id and session.get('customer'):
             user.stripe_customer_id = session['customer']
             print(f"💳 Updated user's Stripe customer ID: {session['customer']}")
-        
-        # Create or update subscription record
-        subscription = db.query(Subscription).filter(
-            Subscription.user_id == user_id
-        ).first()
-        
+    
+    # Create or update subscription record
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == user_id
+    ).first()
+    
         # Use Stripe's actual current_period_end
         try:
             current_period_end = safe_timestamp_to_datetime(stripe_subscription.current_period_end)
@@ -400,27 +400,27 @@ async def handle_successful_payment(session, db: Session):
             print(f"⚠️ Failed to parse Stripe timestamp, using fallback: {e}")
             current_period_end = datetime.utcnow() + timedelta(days=30)
         
-        if subscription:
+    if subscription:
             print(f"📝 Updating existing subscription: {subscription.id}")
-            subscription.stripe_subscription_id = stripe_subscription.id
-            subscription.status = stripe_subscription.status
-            subscription.plan = plan
+        subscription.stripe_subscription_id = stripe_subscription.id
+        subscription.status = stripe_subscription.status
+        subscription.plan = plan
             subscription.current_period_end = current_period_end
             subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
-        else:
+    else:
             print(f"🆕 Creating new subscription for user: {user_id}")
-            subscription = Subscription(
-                user_id=user_id,
-                stripe_subscription_id=stripe_subscription.id,
-                status=stripe_subscription.status,
-                plan=plan,
+        subscription = Subscription(
+            user_id=user_id,
+            stripe_subscription_id=stripe_subscription.id,
+            status=stripe_subscription.status,
+            plan=plan,
                 current_period_end=current_period_end,
                 cancel_at_period_end=stripe_subscription.cancel_at_period_end
-            )
-            db.add(subscription)
-        
+        )
+        db.add(subscription)
+    
         try:
-            db.commit()
+    db.commit()
             print(f"✅ Subscription saved successfully: {subscription.plan}")
         except Exception as e:
             print(f"❌ Database error: {e}")
@@ -469,10 +469,10 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
                 return
         
         # Find or create subscription
-        subscription = db.query(Subscription).filter(
+    subscription = db.query(Subscription).filter(
             Subscription.stripe_subscription_id == subscription_id
-        ).first()
-        
+    ).first()
+    
         if not subscription:
             print(f"❌ No local subscription found for: {subscription_id}")
             return

@@ -17,6 +17,7 @@ import {
 import { ModelSelector } from './ModelSelector';
 import { useClickOutside } from '../utils/useClickOutside';
 import { useSubscriptionUpdate } from '../utils/useSubscriptionUpdate';
+import logo from '../../images/SQLTrainerAI.svg';
 
 
 export const Navbar: React.FC = () => {
@@ -50,9 +51,12 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/practice" className="flex items-center space-x-2">
-              <Database className="h-8 w-8 text-primary-600" />
-              <span className="text-xl font-bold text-secondary-900">SQL Tutor AI</span>
+            <Link to="/" className="flex items-center">
+              <img 
+                src={logo}
+                alt="SQL Trainer AI" 
+                className="h-8 w-auto" 
+              />
             </Link>
           </div>
 

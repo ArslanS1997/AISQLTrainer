@@ -19,6 +19,8 @@ import {
   Target,
   ExternalLink
 } from 'lucide-react';
+import logo from '../../images/SQLTrainerAI.svg';
+import textLogo from '../../images/text-only.svg';
 
 export const LandingPage: React.FC = () => {
   const { user, signIn } = useAuth();
@@ -88,13 +90,22 @@ export const LandingPage: React.FC = () => {
       <section className="relative overflow-hidden bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl font-bold text-secondary-900 mb-6">
-              Skip Expensive Bootcamps,
-              <span className="text-primary-600"></span> Master SQL with AI
-            </h1>
-            <p className="text-xl text-secondary-600 mb-8 max-w-3xl mx-auto">
-              No more expensive bootcamps. Master SQL with AI-powered practice and get certified, while learning at your own pace!
+            <div className="flex justify-center mb-8">
+              <img 
+                src={textLogo}
+                alt="SQL Trainer AI" 
+                className="h-16 md:h-24 w-auto mx-auto" 
+              />
+            </div>
+            
+            <h2 className="mt-6 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+              Skip Expensive Bootcamps, Master SQL with AI
+            </h2>
+            
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-600">
+              Learn SQL through interactive practice, real-time AI feedback, and professional certification.
             </p>
+            
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {user ? (
                 <Link to="/practice">
@@ -387,7 +398,7 @@ export const LandingPage: React.FC = () => {
                     <p className="text-secondary-600">Add credentials to LinkedIn, resumes, and portfolios to stand out in competitive job markets</p>
                   </div>
                 </div>
-              </div>
+                  </div>
               
               <div className="mt-8 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-6 text-white">
                 <h4 className="text-lg font-semibold mb-2">🏆 Certificate Types Available</h4>
@@ -428,7 +439,7 @@ export const LandingPage: React.FC = () => {
                   <div className="text-right">
                     <p className="font-semibold">FireBirdTech</p>
                     <p>Singapore</p>
-                  </div>
+              </div>
                 </div>
                 
                 <div className="mt-6 pt-6 border-t border-secondary-200">
@@ -439,7 +450,7 @@ export const LandingPage: React.FC = () => {
                     <Button size="sm" className="text-xs">
                       Add to LinkedIn
                     </Button>
-                  </div>
+                </div>
                 </div>
               </div>
             </div>
