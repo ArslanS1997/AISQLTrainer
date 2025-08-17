@@ -17,85 +17,14 @@ from routes import (
     dashboard_router, stripe_router
 )
 
+from routes.auth import AI_MODELS
 # Load environment variables
 load_dotenv()
 
 # Model configurations
-AI_MODELS = {
-    'free': {
-        'provider': 'openai',
-        'name': 'gpt-4o-mini',
-        'max_tokens': 5000,
-        'api_key_env': 'OPENAI_API_KEY'
-    },
-    'pro': [
-        {
-            'provider': 'openai',
-            'name': 'gpt-5',
-            'max_tokens': 8000,
-            'api_key_env': 'OPENAI_API_KEY'
-        },
-        {
-            'provider': 'anthropic',
-            'name': 'claude-3.5-sonnet',
-            'max_tokens': 7000,
-            'api_key_env': 'ANTHROPIC_API_KEY'
-        },
-        {
-            'provider': 'gemini',
-            'name': 'gemini-2.5-pro',
-            'max_tokens': 7000,
-            'api_key_env': 'GEMINI_API_KEY'
-        }
-    ],
-    'max': [
-        {
-            'provider': 'openai',
-            'name': 'gpt-5',
-            'max_tokens': 8000,
-            'api_key_env': 'OPENAI_API_KEY'
-        },
-        {
-            'provider': 'anthropic',
-            'name': 'claude-3.5-sonnet',
-            'max_tokens': 7000,
-            'api_key_env': 'ANTHROPIC_API_KEY'
-        },
-        {
-            'provider': 'gemini',
-            'name': 'gemini-2.5-pro',
-            'max_tokens': 7000,
-            'api_key_env': 'GEMINI_API_KEY'
-        }
-    ]
-}
 
-def get_model_for_user(user_id: str, db) -> dspy.LM:
-    """Get the appropriate model based on user's subscription and their selected model."""
-    subscription_service = SubscriptionService(db)
-    user_plan = subscription_service.get_user_plan(user_id)
-    plan_name = user_plan.get('name', 'free')
-    
-    # Get user's selected model from their preferences (you'll need to add this to your database)
-    selected_model_index = user_plan.get('selected_model_index', 0)
-    
-    if plan_name == 'free':
-        model_config = AI_MODELS['free']
-    else:
-        available_models = AI_MODELS[plan_name]
-        model_config = available_models[selected_model_index % len(available_models)]
-    
-    api_key = os.getenv(model_config['api_key_env'])
-    if not api_key:
-        # Fallback to free model if API key not found
-        model_config = AI_MODELS['free']
-        api_key = os.getenv(model_config['api_key_env'])
-    
-    return dspy.LM(
-        model=f"{model_config['provider']}/{model_config['name']}", 
-        api_key=api_key,
-        max_tokens=model_config['max_tokens']
-    )
+
+
 
 # Default model for non-authenticated routes
 default_lm = dspy.LM(
@@ -114,7 +43,7 @@ app = FastAPI(
 # CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Add your frontend URLs
+    allow_origins=[os.environ.get('FRONTEND_URL')],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

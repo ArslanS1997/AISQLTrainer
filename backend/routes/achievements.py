@@ -227,93 +227,16 @@ async def check_master_certificate_eligibility(
 
     # --- DUMMY TESTING RESPONSE: always eligible, always success, dummy stats ---
     # Comment out this block for production!
-    return {
-        "is_eligible": True,
-        "stats": {
-            "overall_accuracy": 100.0,
-            "total_queries": 42,
-            "correct_queries": 42,
-            "sessions_completed": {
-                "basic": 10,
-                "intermediate": 5,
-                "advanced": 2
-            }
-        },
-        "requirements": {
-            "minimum_accuracy": 70,
-            "basic_sessions": 10,
-            "intermediate_sessions": 5,
-            "advanced_sessions": 2
-        }
-    }
-    # --- END DUMMY TESTING RESPONSE ---
-
-    # # PRODUCTION LOGIC BELOW (uncomment for real logic)
-    # # Get all user's sessions
-    # sessions = db.query(DBSession).filter(DBSession.user_id == user_id).all()
-    #
-    # # Return all 0 stats for new user (no sessions)
-    # if not sessions or len(sessions) == 0:
-    #     return {
-    #         "is_eligible": False,
-    #         "stats": {
-    #             "overall_accuracy": 0.0,
-    #             "total_queries": 0,
-    #             "correct_queries": 0,
-    #             "sessions_completed": {
-    #                 "basic": 0,
-    #                 "intermediate": 0,
-    #                 "advanced": 0
-    #             }
-    #         },
-    #         "requirements": {
-    #             "minimum_accuracy": 70,
-    #             "basic_sessions": 10,
-    #             "intermediate_sessions": 5,
-    #             "advanced_sessions": 2
-    #         }
-    #     }
-    #
-    # # Calculate overall stats
-    # total_queries = 0
-    # correct_queries = 0
-    # difficulty_completion = {
-    #     "basic": 0,
-    #     "intermediate": 0,
-    #     "advanced": 0
-    # }
-    #
-    # for session in sessions:
-    #     if session.queries:
-    #         for query in session.queries:
-    #             if isinstance(query, dict):
-    #                 total_queries += 1
-    #                 if query.get("is_correct"):
-    #                     correct_queries += 1
-    #
-    #     if session.difficulty:
-    #         difficulty_completion[session.difficulty] += 1
-    #
-    # overall_accuracy = (correct_queries / total_queries * 100) if total_queries > 0 else 0
-    #
-    # # Check eligibility criteria
-    # is_eligible = (
-    #     overall_accuracy >= 70 and  # At least 70% overall accuracy
-    #     difficulty_completion["basic"] >= 10 and  # Completed at least 10 basic sessions
-    #     difficulty_completion["intermediate"] >= 5 and  # Completed at least 5 intermediate sessions
-    #     difficulty_completion["advanced"] >= 2  # Completed at least 2 advanced sessions
-    # )
-    #
     # return {
-    #     "is_eligible": is_eligible,
+    #     "is_eligible": True,
     #     "stats": {
-    #         "overall_accuracy": round(overall_accuracy, 2),
-    #         "total_queries": total_queries,
-    #         "correct_queries": correct_queries,
+    #         "overall_accuracy": 100.0,
+    #         "total_queries": 42,
+    #         "correct_queries": 42,
     #         "sessions_completed": {
-    #             "basic": difficulty_completion["basic"],
-    #             "intermediate": difficulty_completion["intermediate"],
-    #             "advanced": difficulty_completion["advanced"]
+    #             "basic": 10,
+    #             "intermediate": 5,
+    #             "advanced": 2
     #         }
     #     },
     #     "requirements": {
@@ -323,6 +246,83 @@ async def check_master_certificate_eligibility(
     #         "advanced_sessions": 2
     #     }
     # }
+    # --- END DUMMY TESTING RESPONSE ---
+
+    # # PRODUCTION LOGIC BELOW (uncomment for real logic)
+    # # Get all user's sessions
+    sessions = db.query(DBSession).filter(DBSession.user_id == user_id).all()
+    
+    # Return all 0 stats for new user (no sessions)
+    if not sessions or len(sessions) == 0:
+        return {
+            "is_eligible": False,
+            "stats": {
+                "overall_accuracy": 0.0,
+                "total_queries": 0,
+                "correct_queries": 0,
+                "sessions_completed": {
+                    "basic": 0,
+                    "intermediate": 0,
+                    "advanced": 0
+                }
+            },
+            "requirements": {
+                "minimum_accuracy": 70,
+                "basic_sessions": 10,
+                "intermediate_sessions": 5,
+                "advanced_sessions": 2
+            }
+        }
+    
+    # Calculate overall stats
+    total_queries = 0
+    correct_queries = 0
+    difficulty_completion = {
+        "basic": 0,
+        "intermediate": 0,
+        "advanced": 0
+    }
+    
+    for session in sessions:
+        if session.queries:
+            for query in session.queries:
+                if isinstance(query, dict):
+                    total_queries += 1
+                    if query.get("is_correct"):
+                        correct_queries += 1
+    
+        if session.difficulty:
+            difficulty_completion[session.difficulty] += 1
+    
+    overall_accuracy = (correct_queries / total_queries * 100) if total_queries > 0 else 0
+    
+    # Check eligibility criteria
+    is_eligible = (
+        overall_accuracy >= 70 and  # At least 70% overall accuracy
+        difficulty_completion["basic"] >= 10 and  # Completed at least 10 basic sessions
+        difficulty_completion["intermediate"] >= 5 and  # Completed at least 5 intermediate sessions
+        difficulty_completion["advanced"] >= 2  # Completed at least 2 advanced sessions
+    )
+    
+    return {
+        "is_eligible": is_eligible,
+        "stats": {
+            "overall_accuracy": round(overall_accuracy, 2),
+            "total_queries": total_queries,
+            "correct_queries": correct_queries,
+            "sessions_completed": {
+                "basic": difficulty_completion["basic"],
+                "intermediate": difficulty_completion["intermediate"],
+                "advanced": difficulty_completion["advanced"]
+            }
+        },
+        "requirements": {
+            "minimum_accuracy": 70,
+            "basic_sessions": 10,
+            "intermediate_sessions": 5,
+            "advanced_sessions": 2
+        }
+    }
 
 
 

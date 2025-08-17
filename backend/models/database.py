@@ -52,7 +52,6 @@ class Schema(Base):
     # Relationships
     user = relationship("User", back_populates="schemas")
     sessions = relationship("Session", back_populates="schema")
-    competitions = relationship("Competition", back_populates="schema")
 
 class Session(Base):
     """Practice session model for storing user practice sessions."""
