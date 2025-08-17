@@ -26,12 +26,19 @@ router = APIRouter(prefix="/api/stripe", tags=["Stripe"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+# Make sure PRICE_IDS is defined with all your actual price IDs
 PRICE_IDS = {
     'pro_monthly': os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID"),
     'pro_yearly': os.getenv("STRIPE_PRO_YEARLY_PRICE_ID"),
     'max_monthly': os.getenv("STRIPE_MAX_MONTHLY_PRICE_ID"),
     'max_yearly': os.getenv("STRIPE_MAX_YEARLY_PRICE_ID"),
 }
+
+# Add a reverse mapping for price ID lookup
+def get_plan_from_price_id(price_id: str) -> str:
+    """Get plan name from Stripe price ID."""
+    plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
+    return plan_mapping.get(price_id, 'pro')  # Default to 'pro'
 
 @router.post("/create-checkout-session", response_model = CheckoutResponse)
 async def create_checkout_session(
@@ -283,53 +290,137 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
         stripe_subscription = stripe.Subscription.retrieve(subscription_id)
         customer_id = stripe_subscription.customer
         
-        # Find user by Stripe customer ID
-        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
-        if not user:
-            print(f"❌ User not found for customer: {customer_id}")
-            # Try to find user by subscription
-            subscription = db.query(Subscription).filter(
-                Subscription.stripe_subscription_id == subscription_id
-            ).first()
-            if subscription:
-                user = subscription.user
-                # Update user's customer ID
-                user.stripe_customer_id = customer_id
-                print(f"💳 Updated user's Stripe customer ID: {customer_id}")
-            else:
-                print(f"❌ No local subscription found for: {subscription_id}")
-                return
+        # Get customer details from Stripe
+        stripe_customer = stripe.Customer.retrieve(customer_id)
+        customer_email = stripe_customer.email
         
-        # Update subscription status
+        print(f"🔍 Looking for customer: {customer_id}, email: {customer_email}")
+        
+        # Find user by Stripe customer ID first
+        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+        
+        if not user:
+            print(f"❌ User not found by customer ID: {customer_id}")
+            
+            # Try to find user by email as fallback
+            if customer_email:
+                user = db.query(User).filter(User.email == customer_email).first()
+                if user:
+                    print(f"✅ Found user by email: {customer_email}")
+                    # Update user's customer ID
+                    user.stripe_customer_id = customer_id
+                    print(f"💳 Updated user's Stripe customer ID: {customer_id}")
+                else:
+                    print(f"❌ User not found by email either: {customer_email}")
+            
+            if not user:
+                # Try to find user by existing subscription
+                subscription = db.query(Subscription).filter(
+                    Subscription.stripe_subscription_id == subscription_id
+                ).first()
+                if subscription:
+                    user = subscription.user
+                    # Update user's customer ID
+                    user.stripe_customer_id = customer_id
+                    print(f"💳 Found user via subscription, updated customer ID: {customer_id}")
+                else:
+                    print(f"❌ No local subscription found for: {subscription_id}")
+                    
+                    # RECOVERY: Create missing subscription if user exists by email
+                    if customer_email:
+                        user = db.query(User).filter(User.email == customer_email).first()
+                        if user:
+                            print(f"🔄 RECOVERY: Creating missing subscription for user: {user.email}")
+                            await create_missing_subscription(user, stripe_subscription, customer_id, db)
+                            return
+                    
+                    # If we still can't find the user, this might be a test subscription
+                    # or a subscription created outside our system
+                    print(f"⚠️ Skipping webhook - orphaned subscription: {subscription_id}")
+                    return
+        
+        # Find or create subscription
         subscription = db.query(Subscription).filter(
             Subscription.user_id == user.id
         ).first()
         
-        if subscription:
-            # Fix: Convert timestamp to datetime properly
-            try:
-                current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
-            except (TypeError, ValueError) as e:
-                print(f"❌ Error converting current_period_end: {e}")
-                current_period_end = subscription.current_period_end  # Keep existing
-            
-            print(f"📝 Updating subscription status to: {stripe_subscription.status}")
-            subscription.status = stripe_subscription.status
-            subscription.current_period_end = current_period_end
-            subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
-            
-            try:
-                db.commit()
-                print("✅ Subscription updated successfully")
-            except Exception as e:
-                print(f"❌ Database error: {e}")
-                db.rollback()
-                raise
-        else:
-            print(f"❌ No subscription found for user: {user.id}")
+        if not subscription:
+            # RECOVERY: Create missing subscription
+            print(f"🔄 RECOVERY: Creating missing subscription for user: {user.email}")
+            await create_missing_subscription(user, stripe_subscription, customer_id, db)
+            return
+        
+        # Update existing subscription
+        try:
+            current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        except (TypeError, ValueError) as e:
+            print(f"❌ Error converting current_period_end: {e}")
+            current_period_end = subscription.current_period_end  # Keep existing
+        
+        print(f"📝 Updating subscription status to: {stripe_subscription.status}")
+        subscription.status = stripe_subscription.status
+        subscription.current_period_end = current_period_end
+        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        
+        # Update plan if changed
+        if stripe_subscription.items.data:
+            price_id = stripe_subscription.items.data[0].price.id
+            plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
+            new_plan = plan_mapping.get(price_id, subscription.plan)
+            if new_plan != subscription.plan:
+                print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
+                subscription.plan = new_plan
+        
+        try:
+            db.commit()
+            print("✅ Subscription updated successfully")
+        except Exception as e:
+            print(f"❌ Database error: {e}")
+            db.rollback()
+            raise
             
     except Exception as e:
         print(f"❌ Error in handle_invoice_payment_succeeded: {e}")
+        raise
+
+async def create_missing_subscription(user: User, stripe_subscription, customer_id: str, db: Session):
+    """Create a missing subscription from Stripe data."""
+    try:
+        # Update user's customer ID if missing
+        if not user.stripe_customer_id:
+            user.stripe_customer_id = customer_id
+        
+        # Determine plan from Stripe subscription
+        plan = 'pro'  # Default fallback
+        if stripe_subscription.items.data:
+            price_id = stripe_subscription.items.data[0].price.id
+            plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
+            plan = plan_mapping.get(price_id, 'pro')
+        
+        # Convert timestamp
+        try:
+            current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        except (TypeError, ValueError):
+            current_period_end = datetime.now() + timedelta(days=30)
+        
+        # Create new subscription
+        subscription = Subscription(
+            user_id=user.id,
+            stripe_subscription_id=stripe_subscription.id,
+            status=stripe_subscription.status,
+            plan=plan,
+            current_period_end=current_period_end,
+            cancel_at_period_end=stripe_subscription.cancel_at_period_end
+        )
+        
+        db.add(subscription)
+        db.commit()
+        
+        print(f"✅ RECOVERY: Created missing subscription for {user.email} - Plan: {plan}")
+        
+    except Exception as e:
+        print(f"❌ RECOVERY FAILED: {e}")
+        db.rollback()
         raise
 
 async def handle_subscription_deleted(stripe_subscription, db: Session):
@@ -688,5 +779,99 @@ async def get_plan_change_preview(
             "next_billing_amount": new_amount,
             "message": f"{'Upgrade' if is_upgrade else 'Downgrade'} to {new_plan.upper()} plan"
         }
+
+@router.post("/sync-stripe-customer")
+async def sync_stripe_customer(
+    customer_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Manually sync a Stripe customer with local user."""
+    try:
+        # Verify customer belongs to this user
+        stripe_customer = stripe.Customer.retrieve(customer_id)
+        
+        if stripe_customer.email != current_user.email:
+            raise HTTPException(status_code=400, detail="Customer email doesn't match user email")
+        
+        # Update user's customer ID
+        current_user.stripe_customer_id = customer_id
+        
+        # Get customer's subscriptions
+        subscriptions = stripe.Subscription.list(customer=customer_id, status='all')
+        
+        for stripe_sub in subscriptions.data:
+            # Check if subscription already exists locally
+            existing_sub = db.query(Subscription).filter(
+                Subscription.stripe_subscription_id == stripe_sub.id
+            ).first()
+            
+            if not existing_sub:
+                # Create missing subscription
+                await create_missing_subscription(current_user, stripe_sub, customer_id, db)
+        
+        db.commit()
+        return {"status": "success", "message": "Customer synced successfully"}
+        
+    except Exception as e:
+        print(f"❌ Error syncing customer: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync customer: {str(e)}")
+
+@router.get("/debug-stripe-status")
+async def debug_stripe_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to check Stripe sync status."""
+    try:
+        local_subscription = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).first()
+        
+        result = {
+            "user_email": current_user.email,
+            "user_stripe_customer_id": current_user.stripe_customer_id,
+            "local_subscription_exists": bool(local_subscription),
+            "local_subscription_details": None,
+            "stripe_customer_data": None,
+            "stripe_subscriptions": []
+        }
+        
+        if local_subscription:
+            result["local_subscription_details"] = {
+                "stripe_subscription_id": local_subscription.stripe_subscription_id,
+                "plan": local_subscription.plan,
+                "status": local_subscription.status,
+                "current_period_end": local_subscription.current_period_end.isoformat() if local_subscription.current_period_end else None
+            }
+        
+        # Get Stripe data if customer ID exists
+        if current_user.stripe_customer_id:
+            try:
+                stripe_customer = stripe.Customer.retrieve(current_user.stripe_customer_id)
+                result["stripe_customer_data"] = {
+                    "id": stripe_customer.id,
+                    "email": stripe_customer.email,
+                    "created": stripe_customer.created
+                }
+                
+                # Get subscriptions
+                subscriptions = stripe.Subscription.list(customer=current_user.stripe_customer_id)
+                result["stripe_subscriptions"] = [
+                    {
+                        "id": sub.id,
+                        "status": sub.status,
+                        "current_period_end": sub.current_period_end,
+                        "plan": get_plan_from_price_id(sub.items.data[0].price.id) if sub.items.data else "unknown"
+                    }
+                    for sub in subscriptions.data
+                ]
+            except Exception as e:
+                result["stripe_error"] = str(e)
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
