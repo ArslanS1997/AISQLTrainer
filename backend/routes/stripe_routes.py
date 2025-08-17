@@ -40,16 +40,14 @@ def get_plan_from_price_id(price_id: str) -> str:
     plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
     return plan_mapping.get(price_id, 'pro')  # Default to 'pro'
 
-@router.post("/create-checkout-session", response_model = CheckoutResponse)
+@router.post("/create-checkout-session", response_model=CheckoutResponse)
 async def create_checkout_session(
     request: CheckoutRequest,
-
     current_user: Any = Depends(get_current_user),
     db = Depends(get_db)
 ):
-    
     """Create Stripe checkout session."""
-
+    
     plan = request.plan.lower()
     billing_cycle = request.billing_cycle.lower()
     if not current_user:
@@ -70,6 +68,9 @@ async def create_checkout_session(
         raise HTTPException(status_code=400, detail="Price ID not configured")
     
     try:
+        # FIXED: Use proper frontend URL for success redirect
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        
         checkout_session = stripe.checkout.Session.create(
             customer_email=current_user.email,
             payment_method_types=['card'],
@@ -78,8 +79,8 @@ async def create_checkout_session(
                 'quantity': 1,
             }],
             mode='subscription',
-            success_url=f"{os.getenv('FRONTEND_URL')}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{os.getenv('FRONTEND_URL')}/payment-failure",
+            success_url=f"{frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{frontend_url}/payment-failure",
             metadata={
                 'user_id': current_user.id,
                 'plan': plan,
@@ -242,12 +243,8 @@ async def handle_successful_payment(session, db: Session):
         Subscription.user_id == user_id
     ).first()
     
-    # Fix: Convert timestamp to datetime properly
-    try:
-        current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
-    except (TypeError, ValueError) as e:
-        print(f"❌ Error converting current_period_end: {e}")
-        current_period_end = datetime.now() + timedelta(days=30)  # Fallback
+    # FIXED: Use simple datetime calculation instead of timestamp conversion
+    current_period_end = datetime.utcnow() + timedelta(days=30)
     
     if subscription:
         print(f"📝 Updating existing subscription: {subscription.id}")

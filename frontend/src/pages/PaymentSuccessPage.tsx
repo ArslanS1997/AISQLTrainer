@@ -26,6 +26,21 @@ export const PaymentSuccessPage: React.FC = () => {
     }
   }, [sessionId, user]);
 
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    
+    if (sessionId) {
+      console.log('Payment successful for session:', sessionId);
+      // You can use this session_id to verify the payment with your backend if needed
+    }
+    
+    // Refresh subscription context
+    if (refetchSubscription) {
+      refetchSubscription();
+    }
+  }, [refetchSubscription]);
+
   const checkSubscriptionStatus = async (isRetry = false) => {
     try {
       if (!isRetry) {
