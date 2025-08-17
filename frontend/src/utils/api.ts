@@ -420,13 +420,13 @@ class APIClient {
   async cancelSubscription(): Promise<{ data?: any; error?: string }> {
     return this.request('/api/stripe/cancel-subscription', {
       method: 'POST',
-    })
+    });
   }
 
   async reactivateSubscription(): Promise<{ data?: any; error?: string }> {
     return this.request('/api/stripe/reactivate-subscription', {
       method: 'POST',
-    })
+    });
   }
 
   async getAvailableModels(): Promise<{ data?: { available_models: AIModel[]; current_model: string }; error?: string }> {
@@ -516,6 +516,10 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify({ promo_code: promoCode }),
     });
+  }
+
+  async getSubscriptionStatus(): Promise<{ data?: any; error?: string }> {
+    return this.request('/api/stripe/subscription-status');
   }
 }
 

@@ -10,6 +10,7 @@ import { QueryResultViewer } from '../components/QueryResultViewer';
 import { Database, RotateCcw, Eye, EyeOff, Award } from 'lucide-react';
 import { apiClient } from '../utils/api';
 import { Difficulty } from '../types';  // Import the shared type
+import SubscriptionManagement from '../components/SubscriptionManagement';
 
 
 // Add this UUID generator function at the top of the component or outside it:
@@ -893,6 +894,9 @@ const getSessionProgress = () => {
             {/* ) // This line was removed */}
           </div>
         </div>
+      )}
+      {user && subscription && subscription.plan.name !== 'free' && (
+        <SubscriptionManagement />
       )}
     </div>
   );

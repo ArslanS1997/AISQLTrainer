@@ -53,6 +53,17 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return planName === 'pro' || planName === 'max';
   };
 
+  const refreshSubscription = async () => {
+    try {
+      const response = await apiClient.getSubscriptionStatus();
+      if (response.data) {
+        setSubscription(response.data);
+      }
+    } catch (error) {
+      console.error('Error refreshing subscription:', error);
+    }
+  };
+
   useEffect(() => {
     fetchSubscription();
   }, []);
@@ -77,7 +88,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       loading,
       error,
       refetchSubscription: fetchSubscription,
-      isPremiumUser
+      isPremiumUser,
+      refreshSubscription
     }}>
       {children}
     </SubscriptionContext.Provider>

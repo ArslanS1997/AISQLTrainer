@@ -587,13 +587,36 @@ async def cancel_subscription(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        service = SubscriptionService(db)
-        result = service.cancel_subscription(current_user.id)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Find user's subscription
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).first()
+        
+        if not subscription or not subscription.stripe_subscription_id:
+            raise HTTPException(status_code=400, detail="No active subscription found")
+        
+        # Cancel subscription in Stripe
+        stripe_subscription = stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=True
+        )
+        
+        # Update local database
+        subscription.cancel_at_period_end = True
+        subscription.status = 'active'  # Keep active until period end
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Your subscription will be canceled at the end of your current billing period ({subscription.current_period_end.strftime('%B %d, %Y')}). You'll continue to have access until then.",
+            "cancel_at_period_end": True,
+            "current_period_end": subscription.current_period_end.isoformat()
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+        print(f"❌ Error canceling subscription: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
 
 @router.post("/reactivate-subscription")
 async def reactivate_subscription(
@@ -605,13 +628,37 @@ async def reactivate_subscription(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        service = SubscriptionService(db)
-        result = service.reactivate_subscription(current_user.id)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Find user's subscription
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).first()
+        
+        if not subscription or not subscription.stripe_subscription_id:
+            raise HTTPException(status_code=400, detail="No subscription found")
+        
+        if not subscription.cancel_at_period_end:
+            raise HTTPException(status_code=400, detail="Subscription is not set to cancel")
+        
+        # Reactivate subscription in Stripe
+        stripe_subscription = stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=False
+        )
+        
+        # Update local database
+        subscription.cancel_at_period_end = False
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Your subscription has been reactivated successfully!",
+            "cancel_at_period_end": False
+        }
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to reactivate subscription")
+        print(f"❌ Error reactivating subscription: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to reactivate subscription: {str(e)}")
 
 @router.post("/refresh-subscription")
 async def refresh_subscription(
@@ -1036,5 +1083,39 @@ async def validate_promo_code(
     except Exception as e:
         print(f"❌ Error validating promo code: {e}")
         raise HTTPException(status_code=400, detail="Failed to validate promo code")
+
+@router.get("/subscription-status")
+async def get_subscription_status(
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get detailed subscription status including cancellation info."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).first()
+        
+        if not subscription:
+            return {
+                "has_subscription": False,
+                "plan": "free",
+                "status": "no_subscription"
+            }
+        
+        return {
+            "has_subscription": True,
+            "plan": subscription.plan,
+            "status": subscription.status,
+            "cancel_at_period_end": subscription.cancel_at_period_end,
+            "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+            "stripe_subscription_id": subscription.stripe_subscription_id
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting subscription status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get subscription status: {str(e)}")
 
 
