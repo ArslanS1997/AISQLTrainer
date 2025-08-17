@@ -397,11 +397,10 @@ async def create_missing_subscription(user: User, stripe_subscription, customer_
             plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
             plan = plan_mapping.get(price_id, 'pro')
         
-        # Convert timestamp
-        try:
-            current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
-        except (TypeError, ValueError):
-            current_period_end = datetime.now() + timedelta(days=30)
+        # Use safe timestamp conversion
+        current_period_end = safe_timestamp_to_datetime(
+            getattr(stripe_subscription, 'current_period_end', None)
+        )
         
         # Create new subscription
         subscription = Subscription(
@@ -410,7 +409,7 @@ async def create_missing_subscription(user: User, stripe_subscription, customer_
             status=stripe_subscription.status,
             plan=plan,
             current_period_end=current_period_end,
-            cancel_at_period_end=stripe_subscription.cancel_at_period_end
+            cancel_at_period_end=getattr(stripe_subscription, 'cancel_at_period_end', False)
         )
         
         db.add(subscription)
@@ -445,28 +444,39 @@ async def handle_subscription_updated(stripe_subscription, db: Session):
         print(f"❌ Local subscription not found: {stripe_subscription['id']}")
         return
     
-    # Update subscription details
-    subscription.status = stripe_subscription['status']
-    subscription.current_period_end = datetime.fromtimestamp(stripe_subscription['current_period_end'])
-    subscription.cancel_at_period_end = stripe_subscription['cancel_at_period_end']
-    
-    # Extract plan from the subscription items
-    if stripe_subscription['items']['data']:
-        price_id = stripe_subscription['items']['data'][0]['price']['id']
-        
-        # Map price_id back to plan name
-        plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
-        new_plan = plan_mapping.get(price_id, subscription.plan)
-        
-        if new_plan != subscription.plan:
-            print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
-            subscription.plan = new_plan
-    
+    # Update subscription details with proper error handling
     try:
+        subscription.status = stripe_subscription['status']
+        
+        # Fix: Proper timestamp conversion with error handling
+        try:
+            current_period_end = datetime.fromtimestamp(stripe_subscription['current_period_end'])
+            subscription.current_period_end = current_period_end
+        except (KeyError, TypeError, ValueError) as e:
+            print(f"❌ Error converting current_period_end: {e}")
+            # Keep existing value or set a reasonable default
+            if not subscription.current_period_end:
+                subscription.current_period_end = datetime.now() + timedelta(days=30)
+        
+        subscription.cancel_at_period_end = stripe_subscription.get('cancel_at_period_end', False)
+        
+        # Extract plan from the subscription items
+        if stripe_subscription.get('items', {}).get('data'):
+            price_id = stripe_subscription['items']['data'][0]['price']['id']
+            
+            # Map price_id back to plan name
+            plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
+            new_plan = plan_mapping.get(price_id, subscription.plan)
+            
+            if new_plan != subscription.plan:
+                print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
+                subscription.plan = new_plan
+        
         db.commit()
         print("✅ Subscription update saved")
+        
     except Exception as e:
-        print(f"❌ Database error: {e}")
+        print(f"❌ Database error in handle_subscription_updated: {e}")
         db.rollback()
         raise
 
@@ -543,10 +553,17 @@ async def refresh_subscription(
         # Get latest from Stripe
         stripe_subscription = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
         
-        # Update local record
+        # Update local record with proper error handling
         subscription.status = stripe_subscription.status
-        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
         subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        
+        # Fix: Proper timestamp conversion
+        try:
+            subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        except (TypeError, ValueError) as e:
+            print(f"❌ Error converting current_period_end in refresh: {e}")
+            # Keep existing value if conversion fails
+            pass
         
         db.commit()
         
@@ -873,5 +890,15 @@ async def debug_stripe_status(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+def safe_timestamp_to_datetime(timestamp, fallback_days=30):
+    """Safely convert a Unix timestamp to datetime with fallback."""
+    try:
+        if timestamp is None:
+            raise ValueError("Timestamp is None")
+        return datetime.fromtimestamp(timestamp)
+    except (TypeError, ValueError, OSError) as e:
+        print(f"⚠️ Failed to convert timestamp {timestamp}: {e}")
+        return datetime.now() + timedelta(days=fallback_days)
 
 

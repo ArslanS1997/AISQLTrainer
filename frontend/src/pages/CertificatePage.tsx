@@ -121,11 +121,6 @@ export const CertificatePage: React.FC = () => {
   const UpgradePrompt: React.FC = () => (
     <div className="text-center py-16">
       <div className="max-w-2xl mx-auto">
-        {/* Icon */}
-        <div className="mb-8">
-          <Trophy className="mx-auto h-20 w-20 text-yellow-500" />
-        </div>
-        
         {/* Title */}
         <h3 className="text-3xl font-bold text-gray-900 mb-4">
           Unlock Your Certificates
@@ -177,7 +172,7 @@ export const CertificatePage: React.FC = () => {
             onClick={() => showUpgradeModal('certificates', 'pro')}
             className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
           >
-            Upgrade to Pro - $20/month
+            Upgrade to Pro
           </Button>
           <Button
             onClick={() => window.location.href = '/main'}
