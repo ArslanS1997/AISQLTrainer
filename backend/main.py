@@ -44,8 +44,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        # "http://localhost:3000",  # Local development
-        # "https://aisql-trainer.vercel.app/",  # Replace with your actual Vercel URL
+        "http://localhost:3000",  # Local development
+        "https://your-vercel-app-name.vercel.app",  # Replace with your actual Vercel URL
+        "https://aisqltrainer.onrender.com",  # Your render backend
         os.environ.get('FRONTEND_URL', "http://localhost:3000")  # Fallback
     ],
     allow_credentials=True,
@@ -67,17 +68,8 @@ app.include_router(stripe_router)
 
 @app.get("/health")
 async def health_check():
-    """
-    Health check endpoint.
-    
-    Expected output:
-    - API status and version
-    """
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow()
-    }
+    """Health check endpoint for monitoring."""
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 if __name__ == "__main__":
  

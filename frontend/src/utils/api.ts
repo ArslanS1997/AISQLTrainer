@@ -394,10 +394,16 @@ class APIClient {
 
 
   // Stripe API methods
-  async createCheckoutSession(plan: string, billingCycle: string): Promise<{ data?: any; error?: string }> {
+  async createCheckoutSession(plan: string, billingCycle: string, promoCode?: string): Promise<{ data?: any; error?: string }> {
+    const requestBody: any = { plan, billing_cycle: billingCycle };
+    
+    if (promoCode) {
+      requestBody.promo_code = promoCode;
+    }
+    
     return this.request('/api/stripe/create-checkout-session', {
       method: 'POST',
-      body: JSON.stringify({ plan, billing_cycle: billingCycle }),
+      body: JSON.stringify(requestBody),
     })
   }
 

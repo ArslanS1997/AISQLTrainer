@@ -13,6 +13,14 @@ import dspy
 from dotenv import load_dotenv
 from models.schemas import ChangePlanRequest, ChangePlanResponse
 from pydantic import BaseModel
+import traceback
+import logging
+import json
+import asyncio
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +47,67 @@ def get_plan_from_price_id(price_id: str) -> str:
     """Get plan name from Stripe price ID."""
     plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
     return plan_mapping.get(price_id, 'pro')  # Default to 'pro'
+
+class StripeWebhookError(Exception):
+    """Custom exception for Stripe webhook errors."""
+    def __init__(self, message: str, event_type: str = None, error_details: str = None):
+        self.message = message
+        self.event_type = event_type
+        self.error_details = error_details
+        super().__init__(self.message)
+
+# Add this function for logging webhook events
+def log_webhook_event(event_type: str, event_data: dict, success: bool, error_message: str = None):
+    """Log webhook events for debugging and monitoring."""
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "event_type": event_type,
+        "success": success,
+        "error_message": error_message,
+        "event_id": event_data.get("id"),
+        "event_created": event_data.get("created"),
+        "data_keys": list(event_data.get("data", {}).get("object", {}).keys()) if "data" in event_data else []
+    }
+    
+    print(f"🖨️ Webhook event log: {json.dumps(log_entry, indent=2)}")
+    
+    # You could also save this to a database or file for monitoring
+    return log_entry
+
+# Add this function for retrying failed webhook operations
+async def retry_webhook_operation(operation, max_retries: int = 3, delay: float = 1.0):
+    """Retry a webhook operation with exponential backoff."""
+    for attempt in range(max_retries):
+        try:
+            return await operation()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                # Last attempt, re-raise the error
+                raise
+            
+            # Wait before retrying with exponential backoff
+            wait_time = delay * (2 ** attempt)
+            print(f"⚠️ Webhook operation failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}")
+            await asyncio.sleep(wait_time)
+    
+    # This should never be reached, but just in case
+    raise Exception("Max retries exceeded")
+
+# Add this function for validating webhook events
+def validate_webhook_event(event: dict) -> bool:
+    """Validate that a webhook event has the required structure."""
+    required_fields = ['id', 'type', 'data', 'created']
+    
+    for field in required_fields:
+        if field not in event:
+            print(f"❌ Missing required field: {field}")
+            return False
+    
+    if 'object' not in event['data']:
+        print("❌ Missing 'object' in event data")
+        return False
+    
+    return True
 
 @router.post("/create-checkout-session", response_model=CheckoutResponse)
 async def create_checkout_session(
@@ -160,142 +229,182 @@ async def check_feature_access(
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Stripe webhooks."""
-    print("🎯 Webhook received!")  # Add debug logging
-    
-    payload = await request.body()
-    sig_header = request.headers.get('stripe-signature')
-    
-    print(f"📝 Payload length: {len(payload)}")  # Debug
-    print(f"🔑 Signature header: {sig_header[:20] if sig_header else 'None'}...")  # Debug
-    
-    if not STRIPE_WEBHOOK_SECRET:
-        print("❌ STRIPE_WEBHOOK_SECRET not set!")
-        raise HTTPException(status_code=500, detail="Webhook secret not configured")
-    
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
-        )
-        print(f"✅ Event verified: {event['type']}")  # Debug
-    except ValueError as e:
-        print(f"❌ Invalid payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        print(f"❌ Invalid signature: {e}")
-        raise HTTPException(status_code=400, detail="Invalid signature")
-    
-    # Handle the event
-    try:
-        if event['type'] == 'checkout.session.completed':
-            session = event['data']['object']
-            await handle_successful_payment(session, db)
-            print("✅ Handled checkout.session.completed")
+        print("🎯 Webhook received!")
         
-        elif event['type'] == 'invoice.payment_succeeded':
-            invoice = event['data']['object']
-            await handle_invoice_payment_succeeded(invoice, db)
-            print("✅ Handled invoice.payment_succeeded")
+        payload = await request.body()
+        sig_header = request.headers.get('stripe-signature')
         
-        elif event['type'] == 'customer.subscription.deleted':
-            subscription = event['data']['object']
-            await handle_subscription_deleted(subscription, db)
-            print("✅ Handled customer.subscription.deleted")
+        print(f"📝 Payload length: {len(payload)}")
+        print(f"🔑 Signature header: {sig_header[:20] if sig_header else 'None'}...")
         
-        elif event['type'] == 'customer.subscription.updated':
-            subscription = event['data']['object']
-            await handle_subscription_updated(subscription, db)
-            print("✅ Handled customer.subscription.updated")
+        if not STRIPE_WEBHOOK_SECRET:
+            print("❌ STRIPE_WEBHOOK_SECRET not set!")
+            raise HTTPException(status_code=500, detail="Webhook secret not configured")
+        
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+            print(f"✅ Event verified: {event['type']}")
+        except ValueError as e:
+            print(f"❌ Invalid payload: {e}")
+            log_webhook_event("invalid_payload", {"id": "unknown"}, False, str(e))
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError as e:
+            print(f"❌ Invalid signature: {e}")
+            log_webhook_event("invalid_signature", {"id": "unknown"}, False, str(e))
+            raise HTTPException(status_code=400, detail="Invalid signature")
+        
+        # Validate event 
+        if not validate_webhook_event(event):
+            print("❌ Invalid webhook event structure.")
+            log_webhook_event("invalid_event_structure", event, False, "Invalid event structure")
+            raise HTTPException(status_code=400, detail="Invalid webhook event structure")
 
-        elif event['type'] == 'invoice.upcoming':
-            invoice = event['data']['object']
-            await handle_upcoming_invoice(invoice, db)
-            print("✅ Handled invoice.upcoming")
-        
-        elif event['type'] == 'invoice.created':
-            invoice = event['data']['object']
-            await handle_invoice_created(invoice, db)
-            print("✅ Handled invoice.created")
+        # Handle the event
+        try:
+            if event['type'] == 'checkout.session.completed':
+                session = event['data']['object']
+                await handle_successful_payment(session, db)
+                print("✅ Handled checkout.session.completed")
+                log_webhook_event(event['type'], event, True)
+            
+            elif event['type'] == 'invoice.payment_succeeded':
+                invoice = event['data']['object']
+                await handle_invoice_payment_succeeded(invoice, db)
+                print("✅ Handled invoice.payment_succeeded")
+                log_webhook_event(event['type'], event, True)
+            
+            elif event['type'] == 'customer.subscription.deleted':
+                subscription = event['data']['object']
+                await handle_subscription_deleted(subscription, db)
+                print("✅ Handled customer.subscription.deleted")
+                log_webhook_event(event['type'], event, True)
+            
+            elif event['type'] == 'customer.subscription.updated':
+                subscription = event['data']['object']
+                await handle_subscription_updated(subscription, db)
+                print("✅ Handled customer.subscription.updated")
+                log_webhook_event(event['type'], event, True)
 
-        elif event['type'] == 'invoice.paid':
-            invoice = event['data']['object']
-            await handle_invoice_paid(invoice, db)
-            print("✅ Handled invoice.paid")
+            elif event['type'] == 'invoice.upcoming':
+                invoice = event['data']['object']
+                await handle_upcoming_invoice(invoice, db)
+                print("✅ Handled invoice.upcoming")
+                log_webhook_event(event['type'], event, True)
+            
+            elif event['type'] == 'invoice.created':
+                invoice = event['data']['object']
+                await handle_invoice_created(invoice, db)
+                print("✅ Handled invoice.created")
+                log_webhook_event(event['type'], event, True)
+            
+            elif event['type'] == 'invoice.paid':
+                invoice = event['data']['object']
+                await handle_invoice_paid(invoice, db)
+                print("✅ Handled invoice.paid")
+                log_webhook_event(event['type'], event, True)
+            
+            else:
+                print(f"⚠️ Unhandled event type: {event['type']}")
+                log_webhook_event(event['type'], event, False, "Unhandled event type")
         
-        else:
-            print(f"⚠️ Unhandled event type: {event['type']}")
-    
+        except Exception as e:
+            print(f"❌ Error processing event: {e}")
+            print(f" Event type: {event['type']}")
+            print(f" Event data keys: {list(event['data']['object'].keys()) if 'data' in event and 'object' in event['data'] else 'No data object'}")
+            
+            # Log more details about the error
+            print(f"📋 Full traceback: {traceback.format_exc()}")
+            
+            # Log the failed event
+            log_webhook_event(event['type'], event, False, str(e))
+            
+            raise HTTPException(status_code=500, detail=f"Error processing event: {str(e)}")
+        
+        return {'status': 'success'}
+        
     except Exception as e:
-        print(f"❌ Error processing event: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing event: {str(e)}")
-    
-    return {'status': 'success'}
+        print(f"❌ Webhook handler error: {e}")
+        print(f"📋 Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Webhook handler error: {str(e)}")
 
 async def handle_successful_payment(session, db: Session):
     """Handle successful checkout session."""
-    print(f"🎯 Processing checkout.session.completed for session: {session['id']}")
+    async def _process_payment():
+        print(f"🎯 Processing checkout.session.completed for session: {session['id']}")
+        
+        user_id = session['metadata'].get('user_id')
+        plan = session['metadata'].get('plan')
+        
+        if not user_id or not plan:
+            print(f"❌ Missing metadata: user_id={user_id}, plan={plan}")
+            raise ValueError("Missing required metadata")
+        
+        print(f"👤 User ID: {user_id}, Plan: {plan}")
+        
+        # Get the subscription from Stripe
+        if session.get('subscription'):
+            stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
+            print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
+        else:
+            print("❌ No subscription found in session")
+            raise ValueError("No subscription found in checkout session")
+        
+        # Find user
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            print(f"❌ User not found: {user_id}")
+            raise ValueError(f"User not found: {user_id}")
+        
+        # Update user's Stripe customer ID if not set
+        if not user.stripe_customer_id and session.get('customer'):
+            user.stripe_customer_id = session['customer']
+            print(f"💳 Updated user's Stripe customer ID: {session['customer']}")
+        
+        # Create or update subscription record
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == user_id
+        ).first()
+        
+        # FIXED: Use Stripe's actual current_period_end instead of fixed calculation
+        try:
+            current_period_end = safe_timestamp_to_datetime(stripe_subscription.current_period_end)
+            print(f"📅 Using Stripe's current_period_end: {current_period_end}")
+        except Exception as e:
+            print(f"⚠️ Failed to parse Stripe timestamp, using fallback: {e}")
+            current_period_end = datetime.utcnow() + timedelta(days=30)
+        
+        if subscription:
+            print(f"📝 Updating existing subscription: {subscription.id}")
+            subscription.stripe_subscription_id = stripe_subscription.id
+            subscription.status = stripe_subscription.status
+            subscription.plan = plan
+            subscription.current_period_end = current_period_end
+            subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        else:
+            print(f"🆕 Creating new subscription for user: {user_id}")
+            subscription = Subscription(
+                user_id=user_id,
+                stripe_subscription_id=stripe_subscription.id,
+                status=stripe_subscription.status,
+                plan=plan,
+                current_period_end=current_period_end,
+                cancel_at_period_end=stripe_subscription.cancel_at_period_end
+            )
+            db.add(subscription)
+        
+        try:
+            db.commit()
+            print(f"✅ Subscription saved successfully: {subscription.plan}")
+        except Exception as e:
+            print(f"❌ Database error: {e}")
+            db.rollback()
+            raise
     
-    user_id = session['metadata'].get('user_id')
-    plan = session['metadata'].get('plan')
-    
-    if not user_id or not plan:
-        print(f"❌ Missing metadata: user_id={user_id}, plan={plan}")
-        raise ValueError("Missing required metadata")
-    
-    print(f"👤 User ID: {user_id}, Plan: {plan}")
-    
-    # Get the subscription from Stripe
-    if session.get('subscription'):
-        stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
-        print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
-    else:
-        print("❌ No subscription found in session")
-        raise ValueError("No subscription found in checkout session")
-    
-    # Find user
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        print(f"❌ User not found: {user_id}")
-        raise ValueError(f"User not found: {user_id}")
-    
-    # Update user's Stripe customer ID if not set
-    if not user.stripe_customer_id and session.get('customer'):
-        user.stripe_customer_id = session['customer']
-        print(f"💳 Updated user's Stripe customer ID: {session['customer']}")
-    
-    # Create or update subscription record
-    subscription = db.query(Subscription).filter(
-        Subscription.user_id == user_id
-    ).first()
-    
-    # FIXED: Use simple datetime calculation instead of timestamp conversion
-    current_period_end = datetime.utcnow() + timedelta(days=30)
-    
-    if subscription:
-        print(f"📝 Updating existing subscription: {subscription.id}")
-        subscription.stripe_subscription_id = stripe_subscription.id
-        subscription.status = stripe_subscription.status
-        subscription.plan = plan
-        subscription.current_period_end = current_period_end
-        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
-    else:
-        print(f"🆕 Creating new subscription for user: {user_id}")
-        subscription = Subscription(
-            user_id=user_id,
-            stripe_subscription_id=stripe_subscription.id,
-            status=stripe_subscription.status,
-            plan=plan,
-            current_period_end=current_period_end,
-            cancel_at_period_end=stripe_subscription.cancel_at_period_end
-        )
-        db.add(subscription)
-    
-    try:
-        db.commit()
-        print(f"✅ Subscription saved successfully: {subscription.plan}")
-    except Exception as e:
-        print(f"❌ Database error: {e}")
-        db.rollback()
-        raise
+    # Retry the operation if it fails
+    return await retry_webhook_operation(_process_payment)
 
 # Fix for handle_invoice_payment_succeeded function:
 async def handle_invoice_payment_succeeded(invoice, db: Session):
@@ -344,12 +453,15 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
             print(f"❌ No local subscription found for: {subscription_id}")
             return
         
+        # FIXED: Use Stripe's actual current_period_end instead of fixed calculation
+        try:
+            current_period_end = safe_timestamp_to_datetime(stripe_subscription.current_period_end)
+            print(f"📅 Using Stripe's current_period_end: {current_period_end}")
+        except Exception as e:
+            print(f"⚠️ Failed to parse Stripe timestamp, using fallback: {e}")
+            current_period_end = datetime.utcnow() + timedelta(days=30)
+        
         # Update subscription with new period
-        from datetime import datetime, timedelta
-        
-        # Simple: current_period_end = now + 30 days
-        current_period_end = datetime.utcnow() + timedelta(days=30)
-        
         subscription.current_period_end = current_period_end
         subscription.status = 'active'
         subscription.updated_at = datetime.utcnow()
@@ -428,11 +540,15 @@ async def handle_subscription_updated(stripe_subscription, db: Session):
         # Update subscription details
         subscription.status = stripe_subscription['status']
         
-        # Simple: current_period_end = now + 30 days
-        from datetime import datetime, timedelta
-        current_period_end = datetime.utcnow() + timedelta(days=30)
-        subscription.current_period_end = current_period_end
+        # FIXED: Use Stripe's actual current_period_end instead of fixed calculation
+        try:
+            current_period_end = safe_timestamp_to_datetime(stripe_subscription.get('current_period_end'))
+            print(f"📅 Using Stripe's current_period_end: {current_period_end}")
+        except Exception as e:
+            print(f"⚠️ Failed to parse Stripe timestamp, using fallback: {e}")
+            current_period_end = datetime.utcnow() + timedelta(days=30)
         
+        subscription.current_period_end = current_period_end
         subscription.updated_at = datetime.utcnow()
         
         db.commit()
@@ -858,19 +974,46 @@ def safe_timestamp_to_datetime(timestamp, fallback_days=30):
     """Safely convert a Unix timestamp to datetime with fallback."""
     try:
         if timestamp is None:
+            print("⚠️ Timestamp is None, using fallback")
             raise ValueError("Timestamp is None")
-        return datetime.fromtimestamp(timestamp)
+        
+        # Handle both integer and string timestamps
+        if isinstance(timestamp, str):
+            timestamp = float(timestamp)
+        
+        # Validate timestamp is reasonable (not too old or too far in future)
+        current_time = datetime.now().timestamp()
+        if timestamp < current_time - (365 * 24 * 3600):  # More than 1 year ago
+            print(f"⚠️ Timestamp {timestamp} is too old, using fallback")
+            raise ValueError("Timestamp too old")
+        
+        if timestamp > current_time + (365 * 24 * 3600):  # More than 1 year in future
+            print(f"⚠️ Timestamp {timestamp} is too far in future, using fallback")
+            raise ValueError("Timestamp too far in future")
+        
+        result = datetime.fromtimestamp(timestamp)
+        print(f"✅ Successfully converted timestamp {timestamp} to {result}")
+        return result
+        
     except (TypeError, ValueError, OSError) as e:
         print(f"⚠️ Failed to convert timestamp {timestamp}: {e}")
-        return datetime.now() + timedelta(days=fallback_days)
+        fallback = datetime.now() + timedelta(days=fallback_days)
+        print(f"🔄 Using fallback date: {fallback}")
+        return fallback
 
 @router.post("/validate-promo-code")
 async def validate_promo_code(
-    promo_code: str,
+    request: Request,
     current_user: Any = Depends(get_current_user)
 ):
     """Validate a promo code."""
     try:
+        body = await request.json()
+        promo_code = body.get('promo_code')
+        
+        if not promo_code:
+            raise HTTPException(status_code=400, detail="Promo code is required")
+        
         # Check if promo code exists in Stripe
         promotion_codes = stripe.PromotionCode.list(
             code=promo_code,
@@ -882,18 +1025,16 @@ async def validate_promo_code(
         
         promo_code_obj = promotion_codes.data[0]
         
-        # Check if user has already used this promo code
-        # You might want to track this in your database
-        
         return {
             "valid": True,
-            "discount_type": promo_code_obj.coupon.percent_off and "percentage" or "amount",
+            "discount_type": "percentage" if promo_code_obj.coupon.percent_off else "amount",
             "discount_value": promo_code_obj.coupon.percent_off or promo_code_obj.coupon.amount_off,
             "currency": promo_code_obj.coupon.currency,
             "description": promo_code_obj.coupon.name
         }
         
     except Exception as e:
+        print(f"❌ Error validating promo code: {e}")
         raise HTTPException(status_code=400, detail="Failed to validate promo code")
 
 

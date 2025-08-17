@@ -68,7 +68,7 @@ export const PricingPage: React.FC = () => {
   const [loading, setLoading] = useState<string | null>(null);
   // Add this state for promo code
   const [promoCode, setPromoCode] = useState('');
-  const [promoCodeApplied, setPromoCodeApplied] = useState(false);
+  const [promoCodeValid, setPromoCodeValid] = useState(false);
   const [promoCodeError, setPromoCodeError] = useState('');
 
   // Add this function to handle promo code application
@@ -85,6 +85,37 @@ export const PricingPage: React.FC = () => {
     setPromoCodeApplied(false);
     setPromoCode('');
     setPromoCodeError('');
+  };
+
+  // Add promo code validation function
+  const validatePromoCode = async () => {
+    if (!promoCode.trim()) return;
+    
+    try {
+      const response = await apiClient.validatePromoCode(promoCode);
+      if (response.data?.valid) {
+        setPromoCodeValid(true);
+        setPromoCodeError('');
+      } else {
+        setPromoCodeValid(false);
+        setPromoCodeError('Invalid promo code');
+      }
+    } catch (error) {
+      setPromoCodeValid(false);
+      setPromoCodeError('Failed to validate promo code');
+    }
+  };
+
+  // Update checkout function to include promo code
+  const handleCheckout = async (plan: string, billingCycle: string) => {
+    try {
+      const response = await apiClient.createCheckoutSession(plan, billingCycle, promoCodeValid ? promoCode : undefined);
+      if (response.data?.checkout_url) {
+        window.location.href = response.data.checkout_url;
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+    }
   };
 
   const handleSubscribe = async (planName: string) => {
@@ -234,8 +265,8 @@ export const PricingPage: React.FC = () => {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       <button
-                        onClick={handlePromoCodeApply}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                        onClick={validatePromoCode}
+                        className="px-4 py-2 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 transition-colors"
                       >
                         Apply
                       </button>
@@ -258,6 +289,9 @@ export const PricingPage: React.FC = () => {
                   )}
                   {promoCodeError && (
                     <p className="text-red-600 text-sm mt-1">{promoCodeError}</p>
+                  )}
+                  {promoCodeValid && (
+                    <p className="text-green-600 text-sm mt-1">✓ Promo code applied!</p>
                   )}
                 </div>
               </div>

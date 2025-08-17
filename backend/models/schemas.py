@@ -294,7 +294,7 @@ class ProgressResponse(BaseModel):
 class CheckoutRequest(BaseModel):
     plan: str
     billing_cycle: str
-    promo_code: Optional[str] = None  # ADD THIS LINE for promo code support
+    promo_code: Optional[str] = None  # ADD THIS for promo code support
 
 
 class CheckoutResponse(BaseModel):
