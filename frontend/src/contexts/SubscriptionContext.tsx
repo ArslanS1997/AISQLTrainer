@@ -7,7 +7,8 @@ interface SubscriptionContextType {
   loading: boolean;
   error: string | null;
   refetchSubscription: () => Promise<void>;
-  isPremiumUser: () => boolean;  // Add this helper
+  refreshSubscription: () => Promise<void>; // ADD THIS LINE
+  isPremiumUser: () => boolean;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType>({
@@ -15,6 +16,7 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
   loading: false,
   error: null,
   refetchSubscription: async () => {},
+  refreshSubscription: async () => {},
   isPremiumUser: () => false,
 });
 
@@ -88,8 +90,8 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       loading,
       error,
       refetchSubscription: fetchSubscription,
+      refreshSubscription,
       isPremiumUser,
-      refreshSubscription
     }}>
       {children}
     </SubscriptionContext.Provider>
