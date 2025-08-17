@@ -352,11 +352,35 @@ async def handle_successful_payment(session, db: Session):
             print("❌ No subscription found in session")
             raise ValueError("No subscription found in checkout session")
         
-        # Find user
+        # Find user - try multiple methods
         user = db.query(User).filter(User.id == user_id).first()
+        
         if not user:
-            print(f"❌ User not found: {user_id}")
-            raise ValueError(f"User not found: {user_id}")
+            print(f"❌ User not found by ID: {user_id}")
+            
+            # Try to find by email from Stripe customer
+            if session.get('customer'):
+                try:
+                    stripe_customer = stripe.Customer.retrieve(session['customer'])
+                    customer_email = stripe_customer.email
+                    print(f"🔍 Looking for user by email: {customer_email}")
+                    
+                    user = db.query(User).filter(User.email == customer_email).first()
+                    if user:
+                        print(f"✅ Found user by email: {customer_email}")
+                        # Update user's ID to match the one from metadata
+                        user.id = user_id
+                        db.commit()
+                        print(f"💳 Updated user ID to: {user_id}")
+                    else:
+                        print(f"❌ User not found by email: {customer_email}")
+                        raise ValueError(f"User not found by ID or email: {user_id}")
+                        
+                except Exception as e:
+                    print(f"❌ Error retrieving Stripe customer: {e}")
+                    raise ValueError(f"User not found: {user_id}")
+            else:
+                raise ValueError(f"User not found: {user_id}")
         
         # Update user's Stripe customer ID if not set
         if not user.stripe_customer_id and session.get('customer'):
@@ -368,7 +392,7 @@ async def handle_successful_payment(session, db: Session):
             Subscription.user_id == user_id
         ).first()
         
-        # FIXED: Use Stripe's actual current_period_end instead of fixed calculation
+        # Use Stripe's actual current_period_end
         try:
             current_period_end = safe_timestamp_to_datetime(stripe_subscription.current_period_end)
             print(f"📅 Using Stripe's current_period_end: {current_period_end}")
