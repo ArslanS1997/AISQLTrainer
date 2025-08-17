@@ -1,118 +1,99 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSubscription } from '../contexts/SubscriptionContext';
 import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
-import { Card } from '../components/Card';
-import { Check, Star, Zap, Crown } from 'lucide-react';
+import { Check, X, Star, Crown, Zap } from 'lucide-react';
+
+const plans = [
+  {
+    name: 'Free',
+    price: { monthly: 0, yearly: 0 },
+    icon: Star,
+    iconColor: 'text-gray-500',
+    bgColor: 'bg-gray-50',
+    features: [
+      { text: '5 schema generations per month', included: true },
+      { text: '3 competitions per month', included: true },
+      { text: 'Basic AI models (GPT-4o or lower)', included: true },
+      { text: 'Community support', included: true },
+      { text: 'Certificate downloads', included: false },
+      { text: 'Master certificate', included: false },
+      { text: 'Advanced AI models', included: false },
+    ],
+  },
+  {
+    name: 'Pro',
+    price: { 
+      monthly: 20, 
+      yearly: Math.round(20 * 12 * 0.8) // $20/month with 20% off yearly = $192/year
+    },
+    icon: Zap,
+    iconColor: 'text-blue-500',
+    bgColor: 'bg-blue-50',
+    popular: true,
+    features: [
+      { text: '20 schema generations per month', included: true },
+      { text: '10 competitions per month', included: true },
+      { text: 'Latest AI models', included: true },
+      { text: 'Certificate downloads', included: true },
+      { text: 'Master certificate', included: true },
+      { text: 'Priority email support', included: true },
+      { text: 'Advanced analytics', included: true },
+    ],
+  },
+  {
+    name: 'Max',
+    price: { 
+      monthly: 30, 
+      yearly: Math.round(30 * 12 * 0.8) // $30/month with 20% off yearly = $288/year
+    },
+    icon: Crown,
+    iconColor: 'text-purple-500',
+    bgColor: 'bg-purple-50',
+    features: [
+      { text: '50 schema generations per month', included: true },
+      { text: '50 competitions per month', included: true },
+      { text: 'Premium AI models', included: true },
+      { text: 'All certificates & badges', included: true },
+      { text: 'Master certificate', included: true },
+      { text: '24/7 priority support', included: true },
+      { text: 'Early access to features', included: true },
+    ],
+  }
+];
 
 const PricingPage: React.FC = () => {
   const { user } = useAuth();
-  const { subscription } = useSubscription();
-  
-  // Add promo code state
-  const [promoCode, setPromoCode] = useState('');
-  const [promoCodeValid, setPromoCodeValid] = useState(false);
-  const [promoCodeApplied, setPromoCodeApplied] = useState(false);
-  const [promoCodeError, setPromoCodeError] = useState('');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [loading, setLoading] = useState<string | null>(null);
 
-  // Add promo code validation function
-  const validatePromoCode = async () => {
-    if (!promoCode.trim()) return;
-    
-    try {
-      const response = await apiClient.validatePromoCode(promoCode);
-      if (response.data?.valid) {
-        setPromoCodeValid(true);
-        setPromoCodeApplied(true);
-        setPromoCodeError('');
-      } else {
-        setPromoCodeValid(false);
-        setPromoCodeApplied(false);
-        setPromoCodeError('Invalid promo code');
-      }
-    } catch (error) {
-      setPromoCodeValid(false);
-      setPromoCodeApplied(false);
-      setPromoCodeError('Failed to validate promo code');
+  const handleSubscribe = async (planName: string) => {
+    if (!user) {
+      // Redirect to login
+      window.location.href = '/';
+      return;
     }
-  };
 
-  // Add this function to remove promo code
-  const handlePromoCodeRemove = () => {
-    setPromoCodeApplied(false);
-    setPromoCode('');
-    setPromoCodeError('');
-    setPromoCodeValid(false);
-  };
+    if (planName === 'Free') {
+      return; // Already on free plan
+    }
 
-  const handleCheckout = async (plan: string, billingCycle: string) => {
+    setLoading(planName);
+
     try {
-      const response = await apiClient.createCheckoutSession(
-        plan, 
-        billingCycle, 
-        promoCodeApplied ? promoCode : undefined
-      );
+      const response = await apiClient.createCheckoutSession(planName.toLowerCase(), billingCycle);
       if (response.data?.checkout_url) {
         window.location.href = response.data.checkout_url;
+      } else {
+        throw new Error('Failed to create checkout session');
       }
     } catch (error) {
-      console.error('Checkout error:', error);
+      console.error('Subscription error:', error);
+      alert('Failed to start subscription process. Please try again.');
+    } finally {
+      setLoading(null);
     }
   };
-
-  const plans = [
-    {
-      name: 'Free',
-      price: '$0',
-      period: 'forever',
-      features: [
-        'Practice SQL queries',
-        'Get instant feedback',
-        'Earn certificates (view only)',
-        'Basic AI models',
-        'Community support'
-      ],
-      popular: false,
-      buttonText: 'Current Plan',
-      buttonVariant: 'outline' as const,
-      disabled: true
-    },
-    {
-      name: 'Pro',
-      price: '$20',
-      period: 'month',
-      features: [
-        'Everything in Free',
-        'Download PDF certificates',
-        'LinkedIn profile integration',
-        'Advanced AI models',
-        'Competition mode',
-        'Priority support'
-      ],
-      popular: true,
-      buttonText: 'Upgrade to Pro',
-      buttonVariant: 'primary' as const, // Change from 'default' to 'primary'
-      disabled: false
-    },
-    {
-      name: 'Max',
-      price: '$30',
-      period: 'month',
-      features: [
-        'Everything in Pro',
-        'Master certificate eligibility',
-        'Unlimited competitions',
-        'Custom schema generation',
-        'API access',
-        'Dedicated support'
-      ],
-      popular: false,
-      buttonText: 'Upgrade to Max',
-      buttonVariant: 'primary' as const, // Change from 'default' to 'primary'
-      disabled: false
-    }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -120,172 +101,110 @@ const PricingPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Choose Your Plan
+            Choose Your SQL Learning Plan
           </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Start free and upgrade as you grow. All plans include our core SQL learning features.
+          <p className="text-xl text-gray-600 mb-8">
+            Unlock advanced features and accelerate your SQL mastery
           </p>
-        </div>
 
-        {/* Promo Code Section */}
-        <div className="max-w-md mx-auto mb-8">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Have a Promo Code?</h3>
-            {!promoCodeApplied ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  placeholder="Enter promo code"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={validatePromoCode}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-                >
-                  Apply
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-green-600">
-                <span>✓ Promo code applied: {promoCode}</span>
-                <button
-                  onClick={handlePromoCodeRemove}
-                  className="text-red-600 hover:text-red-800 underline"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-            {promoCodeError && (
-              <p className="text-red-500 text-sm mt-1">{promoCodeError}</p>
-            )}
-            {promoCodeValid && !promoCodeApplied && (
-              <p className="text-green-500 text-sm mt-1">✓ Promo code valid! Click Apply to use it.</p>
+          {/* Billing Toggle */}
+          <div className="flex items-center justify-center space-x-4">
+            <span className={`text-sm ${billingCycle === 'monthly' ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+              Monthly
+            </span>
+            <button
+              onClick={() => setBillingCycle(billingCycle === 'monthly' ? 'yearly' : 'monthly')}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                billingCycle === 'yearly' ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  billingCycle === 'yearly' ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className={`text-sm ${billingCycle === 'yearly' ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+              Yearly
+            </span>
+            {billingCycle === 'yearly' && (
+              <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full">
+                Save 20%
+              </span>
             )}
           </div>
         </div>
 
         {/* Pricing Cards */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {plans.map((plan, index) => (
-            <Card
-              key={plan.name}
-              className={`relative ${
-                plan.popular
-                  ? 'ring-2 ring-blue-500 transform scale-105'
-                  : ''
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-medium">
-                    Most Popular
-                  </span>
-                </div>
-              )}
+        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          {plans.map((plan) => {
+            const Icon = plan.icon;
+            const price = plan.price[billingCycle];
+            
+            return (
+              <div
+                key={plan.name}
+                className={`relative rounded-2xl border ${
+                  plan.popular ? 'border-blue-500 shadow-xl' : 'border-gray-200 shadow-lg'
+                } ${plan.bgColor} p-8`}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-medium">
+                      Most Popular
+                    </span>
+                  </div>
+                )}
 
-              <div className="text-center">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">{plan.name}</h3>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-gray-900">{plan.price}</span>
-                  <span className="text-gray-600">/{plan.period}</span>
+                <div className="text-center mb-8">
+                  <Icon className={`h-12 w-12 mx-auto mb-4 ${plan.iconColor}`} />
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{plan.name}</h3>
+                  <div className="mb-4">
+                    <span className="text-4xl font-bold text-gray-900">${price}</span>
+                    {plan.name !== 'Free' && (
+                      <span className="text-gray-500">/{billingCycle === 'monthly' ? 'mo' : 'yr'}</span>
+                    )}
+                  </div>
                 </div>
 
-                <ul className="text-left space-y-3 mb-8">
-                  {plan.features.map((feature, featureIndex) => (
-                    <li key={featureIndex} className="flex items-start">
-                      <Check className="h-5 w-5 text-green-500 mr-3 mt-0.5 flex-shrink-0" />
-                      <span className="text-gray-700">{feature}</span>
+                <ul className="space-y-4 mb-8">
+                  {plan.features.map((feature, index) => (
+                    <li key={index} className="flex items-center">
+                      {feature.included ? (
+                        <Check className="h-5 w-5 text-green-500 mr-3 flex-shrink-0" />
+                      ) : (
+                        <X className="h-5 w-5 text-gray-300 mr-3 flex-shrink-0" />
+                      )}
+                      <span className={feature.included ? 'text-gray-900' : 'text-gray-400'}>
+                        {feature.text}
+                      </span>
                     </li>
                   ))}
                 </ul>
 
                 <Button
-                  onClick={() => handleCheckout(plan.name.toLowerCase(), 'monthly')}
-                  variant={plan.buttonVariant}
-                  disabled={plan.disabled}
-                  className="w-full"
+                  onClick={() => handleSubscribe(plan.name)}
+                  disabled={loading === plan.name}
+                  className={`w-full ${
+                    plan.popular
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                  }`}
                 >
-                  {plan.buttonText}
-                </Button>
-
-                {/* Add this promo code section */}
-                <div className="mt-4">
-                  {!promoCodeApplied ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={promoCode}
-                        onChange={(e) => setPromoCode(e.target.value)}
-                        placeholder="Enter promo code"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <button
-                        onClick={validatePromoCode}
-                        className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-                      >
-                        Apply
-                      </button>
-                    </div>
+                  {loading === plan.name ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+                      Processing...
+                    </>
+                  ) : plan.name === 'Free' ? (
+                    'Current Plan'
                   ) : (
-                    <div className="flex items-center gap-2 text-green-600">
-                      <span>✓ Promo code applied: {promoCode}</span>
-                      <button
-                        onClick={handlePromoCodeRemove}
-                        className="text-red-600 hover:text-red-800 underline"
-                      >
-                        Remove
-                      </button>
-                    </div>
+                    `Get ${plan.name}`
                   )}
-                  {promoCodeError && (
-                    <p className="text-red-500 text-sm mt-1">{promoCodeError}</p>
-                  )}
-                  {promoCodeValid && !promoCodeApplied && (
-                    <p className="text-green-500 text-sm mt-1">✓ Promo code valid! Click Apply to use it.</p>
-                  )}
-                </div>
+                </Button>
               </div>
-            </Card>
-          ))}
-        </div>
-
-        {/* FAQ Section */}
-        <div className="mt-16 max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-900 text-center mb-8">
-            Frequently Asked Questions
-          </h2>
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Can I change my plan anytime?
-              </h3>
-              <p className="text-gray-600">
-                Yes! You can upgrade or downgrade your plan at any time. Upgrades take effect immediately, 
-                while downgrades take effect at the end of your current billing period.
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                What happens if I cancel?
-              </h3>
-              <p className="text-gray-600">
-                You'll continue to have access to all features until the end of your current billing period. 
-                After that, you'll return to the free plan.
-              </p>
-            </div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Is there a free trial?
-              </h3>
-              <p className="text-gray-600">
-                Yes! Start with our free plan to experience the platform. You can upgrade anytime to unlock 
-                premium features.
-              </p>
-            </div>
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>

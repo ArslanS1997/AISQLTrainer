@@ -90,11 +90,10 @@ export const LandingPage: React.FC = () => {
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-secondary-900 mb-6">
               Skip Expensive Bootcamps,
-              <span className="text-primary-600"> Master SQL</span> with AI
+              <span className="text-primary-600"></span> Master SQL with AI
             </h1>
             <p className="text-xl text-secondary-600 mb-8 max-w-3xl mx-auto">
-              Get professional-grade SQL training at a fraction of the cost. Learn through AI-assisted practice, 
-              compete with intelligent agents, and earn industry-recognized certificates—all without breaking the bank.
+              No more expensive bootcamps. Master SQL with AI-powered practice and get certified, while learning at your own pace!
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {user ? (

@@ -43,10 +43,8 @@ app = FastAPI(
 # CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Local development
-        "https://your-vercel-app-name.vercel.app",  # Replace with your actual Vercel URL
-        "https://aisqltrainer.onrender.com",  # Your render backend
+    allow_origins=[ development
+ Your render backend
         os.environ.get('FRONTEND_URL', "http://localhost:3000")  # Fallback
     ],
     allow_credentials=True,
