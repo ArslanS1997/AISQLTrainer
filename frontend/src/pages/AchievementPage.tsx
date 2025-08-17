@@ -11,23 +11,10 @@ import {
   XCircle
 } from 'lucide-react';
 import { Leaderboard } from '../components/Leaderboard';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
-} from 'recharts';
 import { MasterCertificateCard } from '../components/MasterCertificateCard';
 
 export const AchievementsPage: React.FC = () => {
   const { user } = useAuth();
-  const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('week');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({
@@ -37,8 +24,6 @@ export const AchievementsPage: React.FC = () => {
     currentStreak: 0,
     totalCompetitions: 0,
     bestRank: null as number | null,
-    weeklyProgress: [] as { date: string; sessions: number; points: number }[],
-    topTopics: [] as { topic: string; sessions: number; averageScore: number }[]
   });
   const [progress, setProgress] = useState({
     beginnerCompleted: 0,
@@ -92,25 +77,6 @@ export const AchievementsPage: React.FC = () => {
             currentStreak: statsResponse.data.current_streak,
             totalCompetitions: statsResponse.data.total_competitions,
             bestRank: statsResponse.data.best_rank,
-            // Keep mock weekly progress for now - we'll enhance this later
-            weeklyProgress: [
-              { date: 'Mon', sessions: 2, points: 40 },
-              { date: 'Tue', sessions: 3, points: 60 },
-              { date: 'Wed', sessions: 1, points: 20 },
-              { date: 'Thu', sessions: 4, points: 80 },
-              { date: 'Fri', sessions: 2, points: 40 },
-              { date: 'Sat', sessions: 3, points: 60 },
-              { date: 'Sun', sessions: 1, points: 20 },
-            ],
-            // Keep mock top topics for now
-            topTopics: [
-              { topic: 'SELECT Statements', sessions: 15, averageScore: 85 },
-              { topic: 'JOIN Operations', sessions: 12, averageScore: 72 },
-              { topic: 'WHERE Clauses', sessions: 10, averageScore: 90 },
-              { topic: 'Aggregate Functions', sessions: 8, averageScore: 68 },
-              { topic: 'Subqueries', sessions: 6, averageScore: 65 },
-              { topic: 'Window Functions', sessions: 4, averageScore: 58 },
-            ]
           }));
         }
         
@@ -247,8 +213,6 @@ export const AchievementsPage: React.FC = () => {
       icon: '🏆' 
     }
   ];
-
-  const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
 
   // Loading state
   if (loading) {
@@ -398,104 +362,7 @@ export const AchievementsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Progress Chart */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-secondary-900">Weekly Progress</h2>
-                <div className="flex space-x-2">
-                  {(['week', 'month', 'year'] as const).map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setTimeRange(range)}
-                      className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                        timeRange === range
-                          ? 'bg-primary-100 text-primary-700'
-                          : 'bg-secondary-100 text-secondary-600 hover:bg-secondary-200'
-                      }`}
-                    >
-                      {range.charAt(0).toUpperCase() + range.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stats.weeklyProgress}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line 
-                      type="monotone" 
-                      dataKey="sessions" 
-                      stroke="#3B82F6" 
-                      strokeWidth={2}
-                      name="Sessions"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="points" 
-                      stroke="#10B981" 
-                      strokeWidth={2}
-                      name="Points"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Top Topics */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
-              <h2 className="text-lg font-semibold text-secondary-900 mb-6">Top Topics</h2>
-              
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={stats.topTopics}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ topic, percent }) => `${topic} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="sessions"
-                    >
-                      {stats.topTopics.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {stats.topTopics.map((topic, index) => (
-                  <div key={topic.topic} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div 
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <span className="text-sm text-secondary-700">{topic.topic}</span>
-                    </div>
-                    <span className="text-sm font-medium text-secondary-900">
-                      {topic.sessions} sessions
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8 mt-8">
+        <div className="grid lg:grid-cols-2 gap-8">
           {/* Recent Sessions */}
           <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
             <h2 className="text-lg font-semibold text-secondary-900 mb-6">Recent Sessions</h2>
