@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
-import { Check, X, Star, Crown, Zap } from 'lucide-react';
+import { Check, X, Star, Crown, Zap, CheckCircle } from 'lucide-react';
 import { apiClient } from '../utils/api';
 
 const plans = [
@@ -66,6 +66,26 @@ export const PricingPage: React.FC = () => {
   const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState<string | null>(null);
+  // Add this state for promo code
+  const [promoCode, setPromoCode] = useState('');
+  const [promoCodeApplied, setPromoCodeApplied] = useState(false);
+  const [promoCodeError, setPromoCodeError] = useState('');
+
+  // Add this function to handle promo code application
+  const handlePromoCodeApply = () => {
+    if (promoCode.trim()) {
+      setPromoCodeApplied(true);
+      setPromoCodeError('');
+      // You could also validate the promo code here if needed
+    }
+  };
+
+  // Add this function to remove promo code
+  const handlePromoCodeRemove = () => {
+    setPromoCodeApplied(false);
+    setPromoCode('');
+    setPromoCodeError('');
+  };
 
   const handleSubscribe = async (planName: string) => {
     if (!user) {
@@ -201,6 +221,45 @@ export const PricingPage: React.FC = () => {
                     `Get ${plan.name}`
                   )}
                 </Button>
+
+                {/* Add this promo code section */}
+                <div className="mt-4">
+                  {!promoCodeApplied ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter promo code"
+                        value={promoCode}
+                        onChange={(e) => setPromoCode(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        onClick={handlePromoCodeApply}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-md p-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="text-sm text-green-800">
+                          Promo code applied: <span className="font-semibold">{promoCode}</span>
+                        </span>
+                      </div>
+                      <button
+                        onClick={handlePromoCodeRemove}
+                        className="text-green-600 hover:text-green-800 text-sm"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  {promoCodeError && (
+                    <p className="text-red-600 text-sm mt-1">{promoCodeError}</p>
+                  )}
+                </div>
               </div>
             );
           })}

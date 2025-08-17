@@ -50,6 +50,8 @@ async def create_checkout_session(
     
     plan = request.plan.lower()
     billing_cycle = request.billing_cycle.lower()
+    promo_code = request.promo_code  # GET PROMO CODE FROM REQUEST
+    
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -71,22 +73,44 @@ async def create_checkout_session(
         # FIXED: Use proper frontend URL for success redirect
         frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
         
-        checkout_session = stripe.checkout.Session.create(
-            customer_email=current_user.email,
-            payment_method_types=['card'],
-            line_items=[{
+        # Build checkout session parameters
+        checkout_params = {
+            'customer_email': current_user.email,
+            'payment_method_types': ['card'],
+            'line_items': [{
                 'price': price_id,
                 'quantity': 1,
             }],
-            mode='subscription',
-            success_url=f"{frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{frontend_url}/payment-failure",
-            metadata={
+            'mode': 'subscription',
+            'success_url': f"{frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            'cancel_url': f"{frontend_url}/payment-failure",
+            'allow_promotion_codes': True,  # ENABLE PROMO CODES
+            'metadata': {
                 'user_id': current_user.id,
                 'plan': plan,
                 'billing_cycle': billing_cycle
             }
-        )
+        }
+        
+        # If promo code is provided, validate it first
+        if promo_code:
+            try:
+                # Validate promo code exists in Stripe
+                promotion_codes = stripe.PromotionCode.list(
+                    code=promo_code,
+                    active=True
+                )
+                
+                if not promotion_codes.data:
+                    raise HTTPException(status_code=400, detail="Invalid or expired promo code")
+                
+                # Add promo code to checkout session
+                checkout_params['promotion_code'] = promo_code
+                
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to validate promo code: {str(e)}")
+        
+        checkout_session = stripe.checkout.Session.create(**checkout_params)
         
         return {'checkout_url': checkout_session.url}
         
@@ -839,5 +863,37 @@ def safe_timestamp_to_datetime(timestamp, fallback_days=30):
     except (TypeError, ValueError, OSError) as e:
         print(f"⚠️ Failed to convert timestamp {timestamp}: {e}")
         return datetime.now() + timedelta(days=fallback_days)
+
+@router.post("/validate-promo-code")
+async def validate_promo_code(
+    promo_code: str,
+    current_user: Any = Depends(get_current_user)
+):
+    """Validate a promo code."""
+    try:
+        # Check if promo code exists in Stripe
+        promotion_codes = stripe.PromotionCode.list(
+            code=promo_code,
+            active=True
+        )
+        
+        if not promotion_codes.data:
+            raise HTTPException(status_code=400, detail="Invalid or expired promo code")
+        
+        promo_code_obj = promotion_codes.data[0]
+        
+        # Check if user has already used this promo code
+        # You might want to track this in your database
+        
+        return {
+            "valid": True,
+            "discount_type": promo_code_obj.coupon.percent_off and "percentage" or "amount",
+            "discount_value": promo_code_obj.coupon.percent_off or promo_code_obj.coupon.amount_off,
+            "currency": promo_code_obj.coupon.currency,
+            "description": promo_code_obj.coupon.name
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Failed to validate promo code")
 
 

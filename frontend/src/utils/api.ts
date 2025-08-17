@@ -511,3 +511,16 @@ class APIClient {
 
 
 export const apiClient = new APIClient(BACKEND_URL); 
+
+// Add the promo code validation method
+export const validatePromoCode = async (promoCode: string): Promise<{ data?: any; error?: string }> => {
+  try {
+    const response = await apiClient.request(`/api/stripe/validate-promo-code`, {
+      method: 'POST',
+      body: JSON.stringify({ promo_code: promoCode })
+    });
+    return response;
+  } catch (error) {
+    throw error;
+  }
+}; 

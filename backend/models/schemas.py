@@ -293,7 +293,8 @@ class ProgressResponse(BaseModel):
 
 class CheckoutRequest(BaseModel):
     plan: str
-    billing_cycle: str 
+    billing_cycle: str
+    promo_code: Optional[str] = None  # ADD THIS LINE for promo code support
 
 
 class CheckoutResponse(BaseModel):
@@ -345,3 +346,14 @@ class PaginationParams(BaseModel):
     size: int = 10
     sort_by: Optional[str] = None
     sort_order: Optional[str] = "desc"  # asc, desc 
+
+class PromoCodeValidationRequest(BaseModel):
+    promo_code: str
+
+class PromoCodeValidationResponse(BaseModel):
+    valid: bool
+    discount_type: str  # 'percentage' or 'amount'
+    discount_value: Optional[float] = None
+    currency: Optional[str] = None
+    description: Optional[str] = None
+    error_message: Optional[str] = None 
