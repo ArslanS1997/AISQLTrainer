@@ -12,11 +12,12 @@ import './index.css';
 import CertificatePage from './pages/CertificatePage';
 import { AchievementsPage } from './pages/AchievementPage';
 import { SubscriptionPage } from './pages/SubscriptionPage';
-import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
+import PaymentSuccessPage from './pages/PaymentSuccessPage';
 import { UpgradeProvider } from './contexts/UpgradeContext';
 import { GlobalUpgradeModal } from './components/GlobalUpgradeModal';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { useSubscriptionUpdate } from './utils/useSubscriptionUpdate';
+import PaymentFailurePage from './pages/PaymentFailurePage';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -107,6 +108,7 @@ const AppRoutes: React.FC = () => {
           }
         />
         <Route path="/subscription/success" element={<PaymentSuccessPage />} />
+        <Route path="/payment-failure" element={<PaymentFailurePage />} />
       </Routes>
       <Toaster position="top-right" />
       <GlobalUpgradeModal />
