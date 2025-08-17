@@ -23,6 +23,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
     points = Column(Integer, default=0)
+    stripe_customer_id = Column(String(255), unique=True, nullable=True)
     created_at = Column(DateTime, default=func.now())
     last_login_at = Column(DateTime, default=func.now(), onupdate=func.now())
     subscription_plan_id = Column(String(255), ForeignKey("subscription_plans.id"))

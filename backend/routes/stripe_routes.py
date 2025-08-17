@@ -7,7 +7,7 @@ from utils.subscription_service import SubscriptionService
 import stripe
 import os
 from typing import Any, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import Column, Boolean
 import dspy
 from dotenv import load_dotenv
@@ -179,6 +179,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             await handle_upcoming_invoice(invoice, db)
             print("✅ Handled invoice.upcoming")
         
+        elif event['type'] == 'invoice.created':
+            invoice = event['data']['object']
+            await handle_invoice_created(invoice, db)
+            print("✅ Handled invoice.created")
+
+        elif event['type'] == 'invoice.paid':
+            invoice = event['data']['object']
+            await handle_invoice_paid(invoice, db)
+            print("✅ Handled invoice.paid")
+        
         else:
             print(f"⚠️ Unhandled event type: {event['type']}")
     
@@ -215,17 +225,29 @@ async def handle_successful_payment(session, db: Session):
         print(f"❌ User not found: {user_id}")
         raise ValueError(f"User not found: {user_id}")
     
+    # Update user's Stripe customer ID if not set
+    if not user.stripe_customer_id and session.get('customer'):
+        user.stripe_customer_id = session['customer']
+        print(f"💳 Updated user's Stripe customer ID: {session['customer']}")
+    
     # Create or update subscription record
     subscription = db.query(Subscription).filter(
         Subscription.user_id == user_id
     ).first()
+    
+    # Fix: Convert timestamp to datetime properly
+    try:
+        current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+    except (TypeError, ValueError) as e:
+        print(f"❌ Error converting current_period_end: {e}")
+        current_period_end = datetime.now() + timedelta(days=30)  # Fallback
     
     if subscription:
         print(f"📝 Updating existing subscription: {subscription.id}")
         subscription.stripe_subscription_id = stripe_subscription.id
         subscription.status = stripe_subscription.status
         subscription.plan = plan
-        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+        subscription.current_period_end = current_period_end
         subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
     else:
         print(f"🆕 Creating new subscription for user: {user_id}")
@@ -234,7 +256,7 @@ async def handle_successful_payment(session, db: Session):
             stripe_subscription_id=stripe_subscription.id,
             status=stripe_subscription.status,
             plan=plan,
-            current_period_end=datetime.fromtimestamp(stripe_subscription.current_period_end),
+            current_period_end=current_period_end,
             cancel_at_period_end=stripe_subscription.cancel_at_period_end
         )
         db.add(subscription)
@@ -256,34 +278,59 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
         print("⚠️ No subscription found in invoice")
         return
     
-    # Get subscription from Stripe
-    stripe_subscription = stripe.Subscription.retrieve(subscription_id)
-    customer_id = stripe_subscription.customer
-    
-    # Find user by Stripe customer ID
-    user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
-    if not user:
-        print(f"❌ User not found for customer: {customer_id}")
-        return
-    
-    # Update subscription status
-    subscription = db.query(Subscription).filter(
-        Subscription.user_id == user.id
-    ).first()
-    
-    if subscription:
-        print(f"📝 Updating subscription status to: {stripe_subscription.status}")
-        subscription.status = stripe_subscription.status
-        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
-        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+    try:
+        # Get subscription from Stripe
+        stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+        customer_id = stripe_subscription.customer
         
-        try:
-            db.commit()
-            print("✅ Subscription updated successfully")
-        except Exception as e:
-            print(f"❌ Database error: {e}")
-            db.rollback()
-            raise
+        # Find user by Stripe customer ID
+        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+        if not user:
+            print(f"❌ User not found for customer: {customer_id}")
+            # Try to find user by subscription
+            subscription = db.query(Subscription).filter(
+                Subscription.stripe_subscription_id == subscription_id
+            ).first()
+            if subscription:
+                user = subscription.user
+                # Update user's customer ID
+                user.stripe_customer_id = customer_id
+                print(f"💳 Updated user's Stripe customer ID: {customer_id}")
+            else:
+                print(f"❌ No local subscription found for: {subscription_id}")
+                return
+        
+        # Update subscription status
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == user.id
+        ).first()
+        
+        if subscription:
+            # Fix: Convert timestamp to datetime properly
+            try:
+                current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
+            except (TypeError, ValueError) as e:
+                print(f"❌ Error converting current_period_end: {e}")
+                current_period_end = subscription.current_period_end  # Keep existing
+            
+            print(f"📝 Updating subscription status to: {stripe_subscription.status}")
+            subscription.status = stripe_subscription.status
+            subscription.current_period_end = current_period_end
+            subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+            
+            try:
+                db.commit()
+                print("✅ Subscription updated successfully")
+            except Exception as e:
+                print(f"❌ Database error: {e}")
+                db.rollback()
+                raise
+        else:
+            print(f"❌ No subscription found for user: {user.id}")
+            
+    except Exception as e:
+        print(f"❌ Error in handle_invoice_payment_succeeded: {e}")
+        raise
 
 async def handle_subscription_deleted(stripe_subscription, db: Session):
     """Handle subscription cancellation."""
@@ -337,6 +384,18 @@ async def handle_upcoming_invoice(invoice, db: Session):
     print(f"📧 Upcoming invoice: {invoice['id']}")
     # You could send email notifications here
     # or update UI to show upcoming charges
+
+async def handle_invoice_created(invoice, db: Session):
+    """Handle invoice creation."""
+    print(f"📄 Invoice created: {invoice['id']}")
+    # Log invoice creation - you can add email notifications here
+    return
+
+async def handle_invoice_paid(invoice, db: Session):
+    """Handle invoice paid event."""
+    print(f"💰 Invoice paid: {invoice['id']}")
+    # This is similar to payment_succeeded but specifically for paid status
+    await handle_invoice_payment_succeeded(invoice, db)
 
 @router.post("/cancel-subscription")
 async def cancel_subscription(
