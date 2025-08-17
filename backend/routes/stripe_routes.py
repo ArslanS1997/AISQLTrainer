@@ -276,6 +276,7 @@ async def handle_successful_payment(session, db: Session):
         db.rollback()
         raise
 
+# Fix for handle_invoice_payment_succeeded function:
 async def handle_invoice_payment_succeeded(invoice, db: Session):
     """Handle successful invoice payment (recurring)."""
     print(f"🎯 Processing invoice.payment_succeeded for invoice: {invoice['id']}")
@@ -296,91 +297,48 @@ async def handle_invoice_payment_succeeded(invoice, db: Session):
         
         print(f"🔍 Looking for customer: {customer_id}, email: {customer_email}")
         
-        # Find user by Stripe customer ID first
+        # Try to find user by customer ID first
         user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
         
         if not user:
             print(f"❌ User not found by customer ID: {customer_id}")
-            
-            # Try to find user by email as fallback
-            if customer_email:
-                user = db.query(User).filter(User.email == customer_email).first()
-                if user:
-                    print(f"✅ Found user by email: {customer_email}")
-                    # Update user's customer ID
-                    user.stripe_customer_id = customer_id
-                    print(f"💳 Updated user's Stripe customer ID: {customer_id}")
-                else:
-                    print(f"❌ User not found by email either: {customer_email}")
-            
-            if not user:
-                # Try to find user by existing subscription
-                subscription = db.query(Subscription).filter(
-                    Subscription.stripe_subscription_id == subscription_id
-                ).first()
-                if subscription:
-                    user = subscription.user
-                    # Update user's customer ID
-                    user.stripe_customer_id = customer_id
-                    print(f"💳 Found user via subscription, updated customer ID: {customer_id}")
-                else:
-                    print(f"❌ No local subscription found for: {subscription_id}")
-                    
-                    # RECOVERY: Create missing subscription if user exists by email
-                    if customer_email:
-                        user = db.query(User).filter(User.email == customer_email).first()
-                        if user:
-                            print(f"🔄 RECOVERY: Creating missing subscription for user: {user.email}")
-                            await create_missing_subscription(user, stripe_subscription, customer_id, db)
-                            return
-                    
-                    # If we still can't find the user, this might be a test subscription
-                    # or a subscription created outside our system
-                    print(f"⚠️ Skipping webhook - orphaned subscription: {subscription_id}")
-                    return
+            # Try to find by email
+            user = db.query(User).filter(User.email == customer_email).first()
+            if user:
+                print(f"✅ Found user by email: {customer_email}")
+                # Update user's stripe_customer_id
+                user.stripe_customer_id = customer_id
+                db.commit()
+                print(f"💳 Updated user's Stripe customer ID: {customer_id}")
+            else:
+                print(f"❌ User not found by email: {customer_email}")
+                return
         
         # Find or create subscription
         subscription = db.query(Subscription).filter(
-            Subscription.user_id == user.id
+            Subscription.stripe_subscription_id == subscription_id
         ).first()
         
         if not subscription:
-            # RECOVERY: Create missing subscription
-            print(f"🔄 RECOVERY: Creating missing subscription for user: {user.email}")
-            await create_missing_subscription(user, stripe_subscription, customer_id, db)
+            print(f"❌ No local subscription found for: {subscription_id}")
             return
         
-        # Update existing subscription
-        try:
-            current_period_end = datetime.fromtimestamp(stripe_subscription.current_period_end)
-        except (TypeError, ValueError) as e:
-            print(f"❌ Error converting current_period_end: {e}")
-            current_period_end = subscription.current_period_end  # Keep existing
+        # Update subscription with new period
+        from datetime import datetime, timedelta
         
-        print(f"📝 Updating subscription status to: {stripe_subscription.status}")
-        subscription.status = stripe_subscription.status
+        # Simple: current_period_end = now + 30 days
+        current_period_end = datetime.utcnow() + timedelta(days=30)
+        
         subscription.current_period_end = current_period_end
-        subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+        subscription.status = 'active'
+        subscription.updated_at = datetime.utcnow()
         
-        # Update plan if changed
-        if stripe_subscription.items.data:
-            price_id = stripe_subscription.items.data[0].price.id
-            plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
-            new_plan = plan_mapping.get(price_id, subscription.plan)
-            if new_plan != subscription.plan:
-                print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
-                subscription.plan = new_plan
+        db.commit()
+        print(f"✅ Updated subscription period end to: {current_period_end}")
         
-        try:
-            db.commit()
-            print("✅ Subscription updated successfully")
-        except Exception as e:
-            print(f"❌ Database error: {e}")
-            db.rollback()
-            raise
-            
     except Exception as e:
         print(f"❌ Error in handle_invoice_payment_succeeded: {e}")
+        db.rollback()
         raise
 
 async def create_missing_subscription(user: User, stripe_subscription, customer_id: str, db: Session):
@@ -432,6 +390,7 @@ async def handle_subscription_deleted(stripe_subscription, db: Session):
         subscription.status = 'canceled'
         db.commit()
 
+# Fix for handle_subscription_updated function:
 async def handle_subscription_updated(stripe_subscription, db: Session):
     """Handle subscription updates (plan changes, etc.)."""
     print(f"🔄 Processing subscription update: {stripe_subscription['id']}")
@@ -441,42 +400,25 @@ async def handle_subscription_updated(stripe_subscription, db: Session):
     ).first()
     
     if not subscription:
-        print(f"❌ Local subscription not found: {stripe_subscription['id']}")
+        print(f"❌ No local subscription found for: {stripe_subscription['id']}")
         return
     
-    # Update subscription details with proper error handling
     try:
+        # Update subscription details
         subscription.status = stripe_subscription['status']
         
-        # Fix: Proper timestamp conversion with error handling
-        try:
-            current_period_end = datetime.fromtimestamp(stripe_subscription['current_period_end'])
-            subscription.current_period_end = current_period_end
-        except (KeyError, TypeError, ValueError) as e:
-            print(f"❌ Error converting current_period_end: {e}")
-            # Keep existing value or set a reasonable default
-            if not subscription.current_period_end:
-                subscription.current_period_end = datetime.now() + timedelta(days=30)
+        # Simple: current_period_end = now + 30 days
+        from datetime import datetime, timedelta
+        current_period_end = datetime.utcnow() + timedelta(days=30)
+        subscription.current_period_end = current_period_end
         
-        subscription.cancel_at_period_end = stripe_subscription.get('cancel_at_period_end', False)
-        
-        # Extract plan from the subscription items
-        if stripe_subscription.get('items', {}).get('data'):
-            price_id = stripe_subscription['items']['data'][0]['price']['id']
-            
-            # Map price_id back to plan name
-            plan_mapping = {v: k.split('_')[0] for k, v in PRICE_IDS.items() if v}
-            new_plan = plan_mapping.get(price_id, subscription.plan)
-            
-            if new_plan != subscription.plan:
-                print(f"📝 Plan changed from {subscription.plan} to {new_plan}")
-                subscription.plan = new_plan
+        subscription.updated_at = datetime.utcnow()
         
         db.commit()
-        print("✅ Subscription update saved")
+        print(f"✅ Updated subscription: {subscription.id}")
         
     except Exception as e:
-        print(f"❌ Database error in handle_subscription_updated: {e}")
+        print(f"❌ Error updating subscription: {e}")
         db.rollback()
         raise
 
