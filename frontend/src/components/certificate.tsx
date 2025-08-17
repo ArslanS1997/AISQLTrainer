@@ -426,7 +426,10 @@ export const Certificate: React.FC<CertificateProps> = ({ userName, type, sessio
       border: '#a21caf', // purple-700
       bg: 'bg-purple-50',
       text: 'text-purple-800',
-      accent: '#a21caf'
+      accent: '#a21caf',
+      gradient: 'linear-gradient(90deg, #a21caf 0%, #7c3aed 100%)',
+      name: '#581c87',
+      subtitle: '#6b21a8'
     };
     fileName = `SQL_Trainer_Competition_Certificate_${competition.date.replace(/\//g, '-')}.pdf`;
     certContent = (
