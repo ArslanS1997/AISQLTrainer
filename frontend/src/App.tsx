@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'r
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LandingPage } from './pages/LandingPage';
-import { PricingPage } from './pages/PricingPage';
+import PricingPage from './pages/PricingPage';
 import { MainPage } from './pages/MainPage';
 
 import { CompetitionPage } from './pages/CompetitionPage';
