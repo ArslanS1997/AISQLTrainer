@@ -8,25 +8,17 @@ interface MasterCertificateCardProps {
   className?: string;
 }
 
-export const MasterCertificateCard: React.FC<MasterCertificateCardProps> = ({ className = '' }) => {
+const MasterCertificateCard: React.FC<MasterCertificateCardProps> = ({ className = '' }) => {
   const { user } = useAuth();
-  const {
-    masterCertificateData,
-    loading,
-    error,
-    canDownloadCertificates,
-    isEligible,
-    isPremiumUser
-  } = useMasterCertificate();
-  
-  const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const { masterCertificateData, loading, error, isEligible } = useMasterCertificate(); // Fix: use correct property names
+  const [showModal, setShowModal] = useState(false);
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 ${className}`}>
-        <div className="flex items-center justify-center py-6">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
-          <span className="text-gray-600">Checking master certificate status...</span>
+      <div className={`bg-white rounded-lg shadow-sm border border-secondary-200 p-6 ${className}`}>
+        <div className="animate-pulse">
+          <div className="h-4 bg-gray-200 rounded w-1/4 mb-2"></div>
+          <div className="h-8 bg-gray-200 rounded w-3/4"></div>
         </div>
       </div>
     );
@@ -34,8 +26,8 @@ export const MasterCertificateCard: React.FC<MasterCertificateCardProps> = ({ cl
 
   if (error) {
     return (
-      <div className={`bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 ${className}`}>
-        Error checking master certificate: {error}
+      <div className={`bg-red-50 border border-red-200 rounded-lg p-6 ${className}`}>
+        <p className="text-red-600">Error loading master certificate data</p>
       </div>
     );
   }
@@ -44,139 +36,120 @@ export const MasterCertificateCard: React.FC<MasterCertificateCardProps> = ({ cl
     return null;
   }
 
-  const handleGetCertificate = () => {
-    if (isEligible && canDownloadCertificates) {
-      setShowCertificateModal(true);
-    }
-  };
-
-  const closeCertificateModal = () => {
-    setShowCertificateModal(false);
-  };
-
-  const getButtonContent = () => {
-    if (!canDownloadCertificates) {
-      // Free plan users always see upgrade button
-      return (
-        <button 
-          onClick={() => window.open('/pricing', '_blank')}
-          className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
-        >
-          Upgrade Plan
-        </button>
-      );
-    } else if (isEligible) {
-      // Premium + eligible users see get certificate button
-      return (
-        <button 
-          onClick={handleGetCertificate}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          Get Certificate
-        </button>
-      );
-    } else {
-      // Premium + not eligible users see disabled button
-      return (
-        <button 
-          disabled
-          className="px-4 py-2 bg-gray-300 text-gray-500 rounded-md cursor-not-allowed"
-          title="Complete the requirements to unlock"
-        >
-          Not Eligible Yet
-        </button>
-      );
-    }
-  };
-
-  const getStatusMessage = () => {
-    if (!canDownloadCertificates) {
-      return "Upgrade to Pro or Max plan to unlock certificates!";
-    } else if (isEligible) {
-      return "Congratulations! You've earned the Master SQL Certificate!";
-    } else {
-      return "Complete the requirements to earn your Master Certificate";
-    }
-  };
+  const { stats, requirements } = masterCertificateData;
 
   return (
     <>
-      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 p-6 ${className}`}>
+      <div className={`bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Master SQL Certificate</h2>
-            <p className="text-gray-600">{getStatusMessage()}</p>
+            <h3 className="text-lg font-semibold text-purple-900 mb-2">
+              🏆 Master SQL Certificate
+            </h3>
+            {isEligible ? (
+              <p className="text-purple-700">
+                Congratulations! You're eligible for the Master Certificate
+              </p>
+            ) : (
+              <p className="text-purple-700">
+                Complete more sessions to unlock the Master Certificate
+              </p>
+            )}
           </div>
-          {getButtonContent()}
+          
+          {isEligible && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              View Certificate
+            </button>
+          )}
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Your Progress</h3>
-            <ul className="space-y-2">
-              <li className="flex justify-between">
-                <span>Overall Accuracy</span>
-                <span className={masterCertificateData.stats.overall_accuracy >= masterCertificateData.requirements.minimum_accuracy ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                  {masterCertificateData.stats.overall_accuracy}% 
-                  <span className="text-gray-400 text-sm">
-                    / {masterCertificateData.requirements.minimum_accuracy}%
-                  </span>
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span>Basic Sessions</span>
-                <span className={masterCertificateData.stats.sessions_completed.basic >= masterCertificateData.requirements.basic_sessions ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                  {masterCertificateData.stats.sessions_completed.basic}/{masterCertificateData.requirements.basic_sessions}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span>Intermediate Sessions</span>
-                <span className={masterCertificateData.stats.sessions_completed.intermediate >= masterCertificateData.requirements.intermediate_sessions ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                  {masterCertificateData.stats.sessions_completed.intermediate}/{masterCertificateData.requirements.intermediate_sessions}
-                </span>
-              </li>
-              <li className="flex justify-between">
-                <span>Advanced Sessions</span>
-                <span className={masterCertificateData.stats.sessions_completed.advanced >= masterCertificateData.requirements.advanced_sessions ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                  {masterCertificateData.stats.sessions_completed.advanced}/{masterCertificateData.requirements.advanced_sessions}
-                </span>
-              </li>
-            </ul>
+        {/* Progress indicators */}
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-900">
+              {stats.overall_accuracy.toFixed(1)}%
+            </div>
+            <div className="text-sm text-purple-600">Accuracy</div>
+            <div className="text-xs text-gray-500">
+              Need {requirements.minimum_accuracy}%
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Requirements</h3>
-            <ul className="space-y-2 text-sm text-gray-600">
-              <li>• Maintain {masterCertificateData.requirements.minimum_accuracy}%+ overall accuracy</li>
-              <li>• Complete {masterCertificateData.requirements.basic_sessions} basic sessions</li>
-              <li>• Complete {masterCertificateData.requirements.intermediate_sessions} intermediate sessions</li>
-              <li>• Complete {masterCertificateData.requirements.advanced_sessions} advanced sessions</li>
-            </ul>
+          
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-900">
+              {stats.sessions_completed.basic}
+            </div>
+            <div className="text-sm text-purple-600">Basic</div>
+            <div className="text-xs text-gray-500">
+              Need {requirements.basic_sessions}
+            </div>
+          </div>
+          
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-900">
+              {stats.sessions_completed.intermediate}
+            </div>
+            <div className="text-sm text-purple-600">Intermediate</div>
+            <div className="text-xs text-gray-500">
+              Need {requirements.intermediate_sessions}
+            </div>
+          </div>
+          
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-900">
+              {stats.sessions_completed.advanced}
+            </div>
+            <div className="text-sm text-purple-600">Advanced</div>
+            <div className="text-xs text-gray-500">
+              Need {requirements.advanced_sessions}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Master Certificate Modal */}
-      {showCertificateModal && (
+      {/* Certificate Modal */}
+      {showModal && isEligible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto relative">
-            <button
-              onClick={closeCertificateModal}
-              className="absolute top-4 right-4 z-10 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-6 h-6 text-gray-600" />
-            </button>
-            
-            <Certificate
-              userName={user?.name || user?.email || 'Student'}
-              type="master"
-              master={{
-                date: new Date().toISOString(),
-                certificate_url: '/api/achievements/master-certificate'
-              }}
-            />
+          <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Master SQL Certificate</h2>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              
+              <Certificate 
+                type="master"
+                userName={user?.name || 'Student'}
+                master={{
+                  date: new Date().toISOString(),
+                  certificate_url: '/api/achievements/master-certificate'
+                }}
+              />
+              
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </>
   );
 };
+
+export { MasterCertificateCard };
+export default MasterCertificateCard;

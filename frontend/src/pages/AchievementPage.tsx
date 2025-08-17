@@ -11,7 +11,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { Leaderboard } from '../components/Leaderboard';
-import { MasterCertificateCard } from '../components/MasterCertificateCard';
+import MasterCertificateCard from '../components/MasterCertificateCard';
 
 export const AchievementsPage: React.FC = () => {
   const { user } = useAuth();

@@ -9,7 +9,7 @@ import { MainPage } from './pages/MainPage';
 import { CompetitionPage } from './pages/CompetitionPage';
 import { Navbar } from './components/Navbar';
 import './index.css';
-import { CertificatePage } from './pages/CertificatePage';
+import CertificatePage from './pages/CertificatePage';
 import { AchievementsPage } from './pages/AchievementPage';
 import { SubscriptionPage } from './pages/SubscriptionPage';
 import { PaymentSuccessPage } from './pages/PaymentSuccessPage';

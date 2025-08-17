@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useUpgrade } from '../contexts/UpgradeContext';
-import { apiClient } from '../lib/apiClient';
-import { Certificate, MasterCertificateCard } from '../components/Certificate';
-import { Button } from '../components/ui/button';
-import { Trophy, FileText, Award, Download, Eye, X } from 'lucide-react';
-import { CertificateData, MasterCertificateData } from '../types';
-import { getCurrentUser } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
-import { useSubscription } from '../contexts/SubscriptionContext';
-import { SubscriptionService } from '../services/SubscriptionService';
-import { DBSession } from '../db/models';
-import { get_db } from '../lib/db';
-import { Session } from 'next-auth';
-import { Any } from 'type-graphql';
-import { get_current_user } from '../lib/auth';
-import { Session as DBSessionModel } from '../db/models';
-import { Session as DBSessionModel } from '../db/models';
+import { useUpgrade } from '../contexts/UpgradeContext';
+import { apiClient } from '../utils/api';
+import { Button } from '../components/Button';
+import { Certificate } from '../components/certificate'; // Use lowercase to match existing file
+import MasterCertificateCard from '../components/MasterCertificateCard'; // Default import
+import { Award, Download, FileText, Trophy, Eye, X } from 'lucide-react';
+
+// Interface definitions
+interface CertificateData {
+  id: string;
+  session_id: string;
+  title: string;
+  difficulty: string;
+  score: number;
+  total_points: number;
+  completion_date: string;
+  topic: string;
+  certificate_url: string;
+}
 
 interface CertificatesResponse {
   certificates: CertificateData[];
@@ -26,34 +29,47 @@ interface CertificatesResponse {
   premium_features?: string[];
 }
 
-const CertificatePage = () => {
+interface MasterCertificateData {
+  is_eligible: boolean;
+  stats: {
+    overall_accuracy: number;
+    total_queries: number;
+    correct_queries: number;
+    sessions_completed: {
+      basic: number;
+      intermediate: number;
+      advanced: number;
+    };
+  };
+  requirements: {
+    minimum_accuracy: number;
+    basic_sessions: number;
+    intermediate_sessions: number;
+    advanced_sessions: number;
+  };
+}
+
+export const CertificatePage: React.FC = () => {
   const { user } = useAuth();
   const { showUpgradeModal } = useUpgrade();
-  const { subscription } = useSubscription();
-
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCertificate, setSelectedCertificate] = useState<CertificateData | null>(null);
-
-  // Add state for upgrade info
+  
+  // Upgrade state
   const [requiresUpgrade, setRequiresUpgrade] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState('');
   const [userPlan, setUserPlan] = useState('free');
 
-  // Add state for master certificate
-  const [masterCertificateData, setMasterCertificateData] = useState<MasterCertificateData | null>(null);
-  const [masterLoading, setMasterLoading] = useState(true);
-  const [masterError, setMasterError] = useState<string | null>(null);
-
   useEffect(() => {
     if (user) {
       fetchCertificates();
-      fetchMasterCertificate();
+    } else {
+      setLoading(false);
     }
   }, [user]);
 
-  // Update the interface to include upgrade information
   const fetchCertificates = async () => {
     try {
       setLoading(true);
@@ -93,74 +109,15 @@ const CertificatePage = () => {
     }
   };
 
-  // Master certificate checker
-  const fetchMasterCertificate = async () => {
-    try {
-      setMasterLoading(true);
-      setMasterError(null);
-      // Use the correct method name that exists in the API client
-      const response = await apiClient.getMasterCertificateEligibility();
-      if (response?.error) {
-        setMasterError(response.error);
-        setMasterCertificateData(null);
-      } else if (response?.data) {
-        setMasterCertificateData(response.data as MasterCertificateData);
-      } else {
-        setMasterCertificateData(null);
-      }
-    } catch (error) {
-      setMasterError(error instanceof Error ? error.message : 'Failed to check master certificate');
-      setMasterCertificateData(null);
-    } finally {
-      setMasterLoading(false);
-    }
-  };
-
   const downloadCertificate = (cert: CertificateData) => {
-    window.open(cert.certificate_url, '_blank');
+    const link = document.createElement('a');
+    link.href = cert.certificate_url;
+    link.download = `certificate-${cert.session_id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  const viewCertificate = (cert: CertificateData) => {
-    setSelectedCertificate(cert);
-  };
-
-  const closeCertificateModal = () => {
-    setSelectedCertificate(null);
-  };
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Please log in to view certificates.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading certificates...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">Error: {error}</p>
-          <Button onClick={fetchCertificates}>Try Again</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Add upgrade prompt component
   const UpgradePrompt: React.FC = () => (
     <div className="text-center py-16">
       <div className="max-w-2xl mx-auto">
@@ -217,7 +174,7 @@ const CertificatePage = () => {
         {/* Action buttons */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Button
-            onClick={() => showUpgradeModal('certificates')}
+            onClick={() => showUpgradeModal('certificates', 'pro')}
             className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
           >
             Upgrade to Pro - $20/month
@@ -239,6 +196,28 @@ const CertificatePage = () => {
       </div>
     </div>
   );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your certificates...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">Error: {error}</p>
+          <Button onClick={fetchCertificates}>Try Again</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -272,7 +251,7 @@ const CertificatePage = () => {
                   Complete practice sessions with 70% or higher accuracy to earn your first certificate!
                 </p>
                 <Button
-                  onClick={() => window.location.href = '/practice'}
+                  onClick={() => window.location.href = '/main'}
                   className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
                 >
                   Start Practicing
@@ -305,27 +284,28 @@ const CertificatePage = () => {
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Completed</span>
+                        <span className="text-sm text-gray-600">Date</span>
                         <span className="text-sm text-gray-900">
                           {new Date(cert.completion_date).toLocaleDateString()}
                         </span>
                       </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex space-x-2">
                       <Button
-                        onClick={() => viewCertificate(cert)}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 flex items-center justify-center"
+                        onClick={() => setSelectedCertificate(cert)}
+                        variant="outline"
+                        className="flex-1"
                       >
-                        <Eye className="w-5 h-5 mr-2" />
-                        View Certificate
+                        <Eye className="h-4 w-4 mr-2" />
+                        View
                       </Button>
                       <Button
                         onClick={() => downloadCertificate(cert)}
-                        className="bg-gray-600 hover:bg-gray-700 flex items-center justify-center px-3"
-                        title="Download PDF"
+                        className="flex-1"
                       >
-                        <Download className="w-5 h-5" />
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -334,36 +314,56 @@ const CertificatePage = () => {
             )}
           </>
         )}
-      </div>
 
-      {/* Certificate Modal */}
-      {selectedCertificate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto relative">
-            <button
-              onClick={closeCertificateModal}
-              className="absolute top-4 right-4 z-10 bg-white rounded-full p-2 shadow-lg hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-6 h-6 text-gray-600" />
-            </button>
-            
-            <Certificate
-              userName={user?.name || user?.email || 'Student'}
-              type="session"
-              session={{
-                session_id: selectedCertificate.session_id,
-                title: selectedCertificate.title,
-                difficulty: selectedCertificate.difficulty,
-                score: selectedCertificate.score,
-                total_points: selectedCertificate.total_points,
-                completion_date: selectedCertificate.completion_date,
-                topic: selectedCertificate.topic,
-                certificate_url: selectedCertificate.certificate_url
-              }}
-            />
+        {/* Certificate Modal */}
+        {selectedCertificate && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold">Certificate Preview</h2>
+                  <button
+                    onClick={() => setSelectedCertificate(null)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+                
+                <Certificate 
+                  type="session"
+                  userName={user?.name || 'Student'} // Fix: use userName instead of user
+                  session={{
+                    session_id: selectedCertificate.session_id,
+                    title: selectedCertificate.title,
+                    difficulty: selectedCertificate.difficulty,
+                    score: selectedCertificate.score,
+                    total_points: selectedCertificate.total_points,
+                    completion_date: selectedCertificate.completion_date,
+                    topic: selectedCertificate.topic,
+                    certificate_url: selectedCertificate.certificate_url
+                  }}
+                />
+                
+                <div className="mt-6 flex justify-end space-x-3">
+                  <Button
+                    onClick={() => setSelectedCertificate(null)}
+                    variant="outline"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => downloadCertificate(selectedCertificate)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
