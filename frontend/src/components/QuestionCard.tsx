@@ -6,6 +6,8 @@ import { CheckCircle, XCircle, Loader, Eye, EyeOff } from 'lucide-react';
 import { apiClient } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Difficulty } from '../types';
+import { SchemaCard } from '../components/SchemaCard';
+
 
 interface QuestionCardProps {
   question: string;

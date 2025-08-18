@@ -6,6 +6,9 @@ import { Button } from '../components/Button';
 import { Certificate } from '../components/certificate'; // Use lowercase to match existing file
 import MasterCertificateCard from '../components/MasterCertificateCard'; // Default import
 import { Award, Download, FileText, Trophy, Eye, X } from 'lucide-react';
+import { SchemaCard } from '../components/SchemaCard';
+import { QuestionCard } from '../components/QuestionCard';
+import { Database } from 'lucide-react';
 
 // Interface definitions
 interface CertificateData {

@@ -465,7 +465,7 @@ class APIClient {
   }
 
   async submitCompetitionAnswer(data: CompetitionSubmitRequest): Promise<{ data?: CompetitionSubmitResponse; error?: string }> {
-    return this.request('/api/competition/submit', {
+    return this.request('/api/competition/human-iscorrect', {
       method: 'POST',
       body: JSON.stringify(data),
     });

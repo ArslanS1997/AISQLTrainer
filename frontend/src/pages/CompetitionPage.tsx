@@ -27,6 +27,8 @@ import {
 import { useUpgrade } from '../contexts/UpgradeContext';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { apiClient } from '../utils/api';
+import { SchemaCard } from '../components/SchemaCard';
+import { TableData, TableColumn } from '../types';
 
 interface CompetitionRound {
   round: number;
@@ -74,6 +76,52 @@ const DIFFICULTY_OPTIONS = [
   { value: 'advanced', label: 'Advanced', description: 'Complex queries', color: 'bg-red-500' }
 ];
 
+// Add this schema parser function
+const parseSchemaToTables = (schemaScript: string): TableData[] => {
+  const tables: TableData[] = [];
+  
+  // Simple regex to extract CREATE TABLE statements
+  const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?\s*\((.*?)\)/gis;
+  let match;
+  
+  while ((match = tableRegex.exec(schemaScript)) !== null) {
+    const tableName = match[1];
+    const columnsStr = match[2];
+    
+    // Extract columns
+    const columns: TableColumn[] = [];
+    const columnLines = columnsStr.split(',');
+    
+    for (const line of columnLines) {
+      const cleanLine = line.trim();
+      if (cleanLine && !cleanLine.toLowerCase().includes('constraint') && !cleanLine.toLowerCase().includes('foreign key')) {
+        const parts = cleanLine.split(/\s+/);
+        if (parts.length >= 2) {
+          const columnName = parts[0].replace(/["`]/g, '');
+          const columnType = parts[1].toUpperCase();
+          
+          columns.push({
+            name: columnName,
+            type: columnType,
+            nullable: true, // Default to nullable
+            primaryKey: false, // You can enhance this later
+            foreignKey: undefined // No foreign key info in basic parsing
+          });
+        }
+      }
+    }
+    
+    tables.push({
+      tableName: tableName,
+      columns: columns,
+      sampleData: [], // Empty for now - no sample data in competition
+      rowCount: 0     // 0 for now - no row count in competition
+    });
+  }
+  
+  return tables;
+};
+
 export const CompetitionPage: React.FC = () => {
   const { user } = useAuth();
   const { subscription, isPremiumUser } = useSubscription();
@@ -83,6 +131,7 @@ export const CompetitionPage: React.FC = () => {
   const [showResults, setShowResults] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const [currentExplanation, setCurrentExplanation] = useState('');
+  const [parsedTables, setParsedTables] = useState<TableData[]>([]);
 
   const [competition, setCompetition] = useState<CompetitionState>({
     competitionId: null,
@@ -128,6 +177,11 @@ export const CompetitionPage: React.FC = () => {
     };
   }, [competition.status, competition.time_remaining]);
 
+  // Add this useEffect to debug the competition state
+  useEffect(() => {
+    console.log('Competition state updated:', competition);
+  }, [competition]);
+
   const startCompetition = async () => {
     setIsLoading(true);
     
@@ -137,17 +191,30 @@ export const CompetitionPage: React.FC = () => {
       });
       
       if (response.data) {
+        console.log('Full response data:', response.data); // Debug the entire response
+        console.log('Questions received:', response.data.questions); // Debug questions specifically
+        
+        // Parse the schema DDL into structured tables
+        const tables = parseSchemaToTables(response.data.schema_ddl);
+        setParsedTables(tables);
+        
+        // Handle questions whether they're strings or objects
+        const questions = response.data.questions || [];
+        const firstQuestion = Array.isArray(questions) && questions.length > 0 
+          ? (typeof questions[0] === 'string' ? questions[0] : questions[0].question || '')
+          : 'No question available';
+        
         setCompetition(prev => ({
           ...prev,
           competitionId: response.data!.competition_id,
           difficulty: response.data!.difficulty,
           schema_ddl: response.data!.schema_ddl,
-          questions: response.data!.questions,  // ADD THIS - Store all questions
-          total_rounds: response.data!.total_rounds,
-          current_round: response.data!.current_round,
-          time_remaining: response.data!.time_limit,
+          questions: questions,
+          total_rounds: response.data!.total_rounds || 5,
+          current_round: 1,
+          time_remaining: response.data!.time_limit || 180,
           status: 'active',
-          current_question: response.data!.questions[0]?.question || ''  // First question
+          current_question: firstQuestion
         }));
       }
     } catch (error: any) {
@@ -162,19 +229,20 @@ export const CompetitionPage: React.FC = () => {
 
   const getNextQuestion = async (competitionId: string, round: number) => {
     try {
-      // Use the question from stored questions array instead of API call
       const questionIndex = round - 1;
       if (questionIndex < competition.questions.length) {
-        const nextQuestion = competition.questions[questionIndex].question;
-
+        const nextQuestion = competition.questions[questionIndex];
+        const questionText = typeof nextQuestion === 'string' 
+          ? nextQuestion 
+          : nextQuestion.question || '';
+        
         setCompetition(prev => ({
           ...prev,
           current_round: round,
-          current_question: nextQuestion,
+          current_question: questionText,
           user_query: ''
         }));
       } else {
-        // All questions completed, get final result
         await getCompetitionResult();
       }
     } catch (error) {
@@ -581,31 +649,31 @@ export const CompetitionPage: React.FC = () => {
           </div>
 
           {/* Schema Display */}
-          {competition.schema_ddl && (
+          {competition.schema_ddl && parsedTables.length > 0 && (
             <div className="mb-8">
-              <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                  <Database className="h-5 w-5 mr-2" />
-                  Database Schema
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg border">
-                  <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto">
-                    {competition.schema_ddl}
-                  </pre>
-                </div>
-              </div>
+              <DatabaseSchemaDiagram
+                schema={{
+                  tables: parsedTables,
+                  relationships: [] // You can enhance this later
+                }}
+                className=""
+              />
             </div>
           )}
 
-          {/* Question and Answer */}
-          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+          {/* Current Question Display */}
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-8">
             <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-2">Question</h3>
-              <p className="text-secondary-700 bg-secondary-50 p-4 rounded-lg">
-                {competition.current_question}
+              <h3 className="text-lg font-semibold mb-2 flex items-center">
+                <Target className="h-5 w-5 mr-2" />
+                Current Question ({competition.current_round} of {competition.total_rounds})
+              </h3>
+              <p className="text-secondary-700 bg-secondary-50 p-4 rounded-lg text-lg">
+                {competition.current_question || 'No question available'}
               </p>
             </div>
-
+            
+            {/* Question and Answer */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-secondary-700 mb-2">
                 Your SQL Query
