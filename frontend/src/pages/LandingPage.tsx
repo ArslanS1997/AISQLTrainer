@@ -559,8 +559,9 @@ export const LandingPage: React.FC = () => {
                 <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
                   <h4 className="font-semibold text-blue-800 mb-2">💡 The Reality</h4>
                   <p className="text-sm text-blue-700">
-                    Even at elite universities like Harvard, students can get help from others or find answers online. 
+                    Even at elite universities, students can cheat or find answers online. 
                     Our system focuses on <strong>verifiable skill demonstration</strong> rather than just preventing all forms of assistance.
+                    All queries are executed and verified for accuracy and correctness
                   </p>
                 </div>
               </div>

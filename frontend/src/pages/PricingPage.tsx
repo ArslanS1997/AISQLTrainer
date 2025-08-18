@@ -2,23 +2,20 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
-import { Check, X, Star, Crown, Zap } from 'lucide-react';
+import { Check, X, Star, Crown, Zap, Users } from 'lucide-react';
 
 const plans = [
   {
     name: 'Free',
     price: { monthly: 0, yearly: 0 },
-    icon: Star,
+    icon: Users,
     iconColor: 'text-gray-500',
     bgColor: 'bg-gray-50',
     features: [
       { text: '5 schema generations per month', included: true },
       { text: '3 competitions per month', included: true },
-      { text: 'Basic AI models (GPT-4o or lower)', included: true },
-      { text: 'Community support', included: true },
-      { text: 'Certificate downloads', included: false },
-      { text: 'Master certificate', included: false },
-      { text: 'Advanced AI models', included: false },
+      { text: 'Basic AI models', included: true },
+      { text: 'Basic support', included: true },
     ],
   },
   {
@@ -38,7 +35,6 @@ const plans = [
       { text: 'Certificate downloads', included: true },
       { text: 'Master certificate', included: true },
       { text: 'Priority email support', included: true },
-      { text: 'Advanced analytics', included: true },
     ],
   },
   {
@@ -55,9 +51,7 @@ const plans = [
       { text: '50 competitions per month', included: true },
       { text: 'Premium AI models', included: true },
       { text: 'All certificates & badges', included: true },
-      { text: 'Master certificate', included: true },
-      { text: '24/7 priority support', included: true },
-      { text: 'Early access to features', included: true },
+      { text: 'Master certificate', included: true }
     ],
   }
 ];
