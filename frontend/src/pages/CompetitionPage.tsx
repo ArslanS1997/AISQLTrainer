@@ -69,7 +69,7 @@ interface CompetitionState {
 }
 
 const DIFFICULTY_OPTIONS = [
-  { value: 'beginner', label: 'Beginner', description: 'Basic SQL queries', color: 'bg-green-500' },
+  { value: 'basic', label: 'basic', description: 'Basic SQL queries', color: 'bg-green-500' },
   { value: 'intermediate', label: 'Intermediate', description: 'Joins and aggregations', color: 'bg-yellow-500' },
   { value: 'advanced', label: 'Advanced', description: 'Complex queries', color: 'bg-red-500' }
 ];
@@ -79,14 +79,14 @@ export const CompetitionPage: React.FC = () => {
   const { subscription, isPremiumUser } = useSubscription();
   const { showUpgradeModal, isModalOpen, hideUpgradeModal } = useUpgrade();
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedDifficulty, setSelectedDifficulty] = useState('beginner');
+  const [selectedDifficulty, setSelectedDifficulty] = useState('basic');
   const [showResults, setShowResults] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const [currentExplanation, setCurrentExplanation] = useState('');
 
   const [competition, setCompetition] = useState<CompetitionState>({
     competitionId: null,
-    difficulty: 'beginner',
+    difficulty: 'basic',
     schema_ddl: '',
     questions: [],  // ADD THIS
     total_rounds: 5,
@@ -269,7 +269,7 @@ export const CompetitionPage: React.FC = () => {
   const resetCompetition = () => {
     setCompetition({
       competitionId: null,
-      difficulty: 'beginner',
+      difficulty: 'basic',
       schema_ddl: '',
       questions: [],  // ADD THIS
       total_rounds: 5,

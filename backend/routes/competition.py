@@ -74,7 +74,9 @@ async def start_competition(
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     # Load all .duckdb files from the competition schemas folder and pick one randomly
-    schemas_dir = os.path.join(os.path.dirname(__file__), "../../competition_schemas")
+    # Get the backend directory path
+    backend_dir = os.path.dirname(os.path.dirname(__file__))
+    schemas_dir = os.path.join(backend_dir, "competition_schemas")
     duckdb_files = [f for f in os.listdir(schemas_dir) if f.endswith(".duckdb")]
     if not duckdb_files:
         raise HTTPException(status_code=500, detail="No competition schemas available.")
@@ -108,7 +110,7 @@ async def start_competition(
     temp_conn.close()
 
     # Generate questions using the AI agent
-    questions = await competition_question_gen_agent(schema_ddl=schema_ddl, difficulty=request.difficulty)
+    questions = await competition_question_gen_agent(schema=schema_ddl, difficulty=request.difficulty)
     
     # Check subscription limits
     subscription_service = SubscriptionService(db)
@@ -124,7 +126,7 @@ async def start_competition(
     
     # Create initial competition record using the new Competition model
     competition = Competition(
-        competition_id=competition_id,
+        id=competition_id,
         user_id=current_user.id,
         difficulty=request.difficulty,
         schema_ddl=schema_ddl,

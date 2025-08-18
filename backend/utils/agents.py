@@ -300,7 +300,7 @@ class both_wrong_explanation_gen(dspy.Signature):
     4. Be supportive and constructive in your feedback, and avoid technical jargon where possible.
 
     Output:
-    - `correct_sql`: The correct SQL query for the question.
+    - `correct_sql`: The correct SQL query for the question in duckDB fashion.
     - `explanation`: A detailed, supportive explanation of the outcome, referencing the mistakes in each submission and how to arrive at the correct answer.
     """
     question = dspy.InputField(desc="The original competition question")
@@ -686,7 +686,7 @@ explanation_gen_agent = dspy.asyncify(dspy.Predict(explanation_gen))
 check_correct_agent = dspy.asyncify(dspy.Predict(check_answer))
 code_rewritter_agent = dspy.asyncify(dspy.Predict(code_fix))
 
-both_wrong_explanation_gen = dspy.asyncify(dspy.Predict(both_wrong_explanation_gen))
+both_wrong_explanation_agent = dspy.asyncify(dspy.Predict(both_wrong_explanation_gen))
 
 
 redo_schema_agent = dspy.asyncify(dspy.Predict(redo_schema))

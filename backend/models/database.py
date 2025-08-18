@@ -37,7 +37,7 @@ class User(Base):
     # Relationship to Session (one-to-many)
     sessions = relationship("Session", back_populates="user")
     # Relationship to CompetitionSubmission (one-to-many)
-    competition_submissions = relationship("CompetitionSubmission", back_populates="user")
+    competition_submissions = relationship("Competition", back_populates="user")
     # Relationship to Subscription (one-to-many)
     subscriptions = relationship("Subscription", back_populates="user")
 
@@ -74,10 +74,9 @@ class Session(Base):
 
 class Competition(Base):
     """Competition model for user vs AI competitions."""
-    __tablename__ = "competition_submissions"
+    __tablename__ = "competitions"
 
     id = Column(String(255), primary_key=True, default=generate_uuid)
-    competition_id = Column(String(255), nullable=False)  # Not a FK, used for API lookups
     user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
 
     # Competition details
@@ -122,7 +121,7 @@ class CompetitionRound(Base):
     """Round-level model for each round in a competition."""
     __tablename__ = "competition_rounds"
 
-    competition_id = Column(String(255), ForeignKey("competition_submissions.competition_id"), primary_key=True)
+    competition_id = Column(String(255), ForeignKey("competitions.id"), primary_key=True)
     round_number = Column(Integer, primary_key=True)  # 1, 2, 3, ...
 
     # Question and SQLs
@@ -147,7 +146,6 @@ class CompetitionRound(Base):
 
     # Relationships
     competition = relationship("Competition", back_populates="rounds")
-    rounds = relationship("CompetitionRound", back_populates="competition", cascade="all, delete-orphan")
 
 
 

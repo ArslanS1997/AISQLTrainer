@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 from models.schemas import DashboardStatsResponse, ProgressResponse, CompetitionHistoryResponse
 from routes.auth import get_current_user, get_db
 from models.database import Session as DBSession
-from models.database import CompetitionSubmission
+from models.database import Competition
+
 from utils.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/api/achievements", tags=["Achievements"])
@@ -54,7 +55,7 @@ async def get_dashboard_stats(
     total_practice_sessions = db.query(DBSession).filter(DBSession.user_id == user_id).count()
 
     # Total competitions participated
-    total_competitions = db.query(CompetitionSubmission).filter(CompetitionSubmission.user_id == user_id).count()
+    total_competitions = db.query(Competition).filter(Competition.user_id == user_id).count()
 
     # Total points (sum of all session scores)
     total_points = sum(s.total_score for s in sessions) if sessions else 0
@@ -71,7 +72,7 @@ async def get_dashboard_stats(
 
     # Best competition rank
     best_rank = None
-    user_submissions = db.query(CompetitionSubmission).filter(CompetitionSubmission.user_id == user_id).all()
+    user_submissions = db.query(Competition).filter(Competition.user_id == user_id).all()
     for sub in user_submissions:
         if sub.rank is not None:
             if best_rank is None or sub.rank < best_rank:
@@ -176,15 +177,15 @@ async def get_recent_activity(
 
     # Recent competitions (last 5) using CompetitionHistoryResponse
     recent_competitions = (
-        db.query(CompetitionSubmission)
-        .filter(CompetitionSubmission.user_id == user_id)
-        .order_by(CompetitionSubmission.submitted_at.desc())
+        db.query(Competition)
+        .filter(Competition.user_id == user_id)
+        .order_by(Competition.submitted_at.desc())
         .limit(5)
         .all()
     )
     competitions_data: List[CompetitionHistoryResponse] = [
         CompetitionHistoryResponse(
-            competition_id=c.competition_id,
+            competition_id=c.id,
             schema_id=getattr(c, "schema_id", None),
             difficulty=getattr(c, "difficulty", None),
             time_limit=getattr(c, "time_limit", None),
