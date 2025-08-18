@@ -67,7 +67,8 @@ def get_competition_duckdb_conn(competition_id:str):
 async def start_competition(
     request: CompetitionStartRequest,
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
 
 ):
     """Start a new User vs AI competition."""
@@ -92,7 +93,7 @@ async def start_competition(
     # Get the DDL (CREATE TABLE statements) for all tables in the selected schema
     # Get all table names in the schema
     table_names = [row[0] for row in temp_conn.execute("SHOW TABLES").fetchall()]
-    
+    ddl_list =[]
     num_tables = len(table_names)
     print(f"Number of tables in selected schema: {num_tables}")
     if num_tables == 0:
@@ -117,7 +118,9 @@ async def start_competition(
 
 
     # Generate questions using the AI agent
-    questions = await competition_question_gen_agent(schema=schema_ddl, difficulty=request.difficulty)
+    with dspy.context(lm = lm):
+        questions = await competition_question_gen_agent(schema=schema_ddl, difficulty=request.difficulty)
+    questions = questions.questions
     
     # Check subscription limits
     subscription_service = SubscriptionService(db)
@@ -137,7 +140,7 @@ async def start_competition(
         user_id=current_user.id,
         difficulty=request.difficulty,
         schema_ddl=schema_ddl,
-        questions=questions.questions,
+        questions=questions,
         total_rounds=5,
         current_round=1,
         time_limit=180,  # 3 minutes total

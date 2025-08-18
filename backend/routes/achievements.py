@@ -183,25 +183,28 @@ async def get_recent_activity(
         .limit(5)
         .all()
     )
-    competitions_data: List[CompetitionHistoryResponse] = [
-        CompetitionHistoryResponse(
-            competition_id=c.id,
-            # There is no schema_id in Competition model, so set to None
+    if not recent_competitions:
+        competitions_data: List[CompetitionHistoryResponse] = []
+    else:
+        competitions_data: List[CompetitionHistoryResponse] = [
+            CompetitionHistoryResponse(
+                competition_id=c.id,
+                # There is no schema_id in Competition model, so set to None
 
-            difficulty=c.difficulty,
-            time_limit=c.time_limit,
-            started_at=c.started_at,
-            expires_at=c.expires_at,
-            # Use user_score as score, since that's the user's score in the competition
-            score=getattr(c, "user_score", None),
-            # There is no rank field in Competition model, so set to None
-            # Use total_time_taken if available, else None
-            time_taken=getattr(c, "total_time_taken", None),
-            # Use completed_at (not submitted_at) for when the competition was finished
-            completed_at=getattr(c, "completed_at", None),
-        )
-        for c in recent_competitions
-    ]
+                difficulty=c.difficulty,
+                time_limit=c.time_limit,
+                started_at=c.started_at,
+                expires_at=c.expires_at,
+                # Use user_score as score, since that's the user's score in the competition
+                score=getattr(c, "user_score", None),
+                # There is no rank field in Competition model, so set to None
+                # Use total_time_taken if available, else None
+                time_taken=getattr(c, "total_time_taken", None),
+                # Use completed_at (not submitted_at) for when the competition was finished
+                completed_at=getattr(c, "completed_at", None),
+            )
+            for c in recent_competitions
+        ]
 
     # For new users, both lists will be empty, which is correct
     return {

@@ -190,7 +190,6 @@ class competition_basic_questions_gen(dspy.Signature):
     - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
-    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
     questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for basic difficulty")
 
 class competition_intermediate_questions_gen(dspy.Signature):
@@ -219,7 +218,6 @@ class competition_intermediate_questions_gen(dspy.Signature):
     - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
-    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
     questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for intermediate difficulty")
 
 class competition_hard_questions_gen(dspy.Signature):
@@ -247,7 +245,6 @@ class competition_hard_questions_gen(dspy.Signature):
     - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
-    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
     questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for hard difficulty")
 
 
