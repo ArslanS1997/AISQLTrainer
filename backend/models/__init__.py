@@ -1,4 +1,4 @@
-# Models package for SQL Tutor AI backend
+# Models package for SQL Trainer AI backend
 from .database import *
 from .schemas import * 
 

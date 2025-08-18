@@ -1,1 +1,1 @@
-# Utils package for SQL Tutor AI backend 
+# Utils package for SQL Trainer AI backend 

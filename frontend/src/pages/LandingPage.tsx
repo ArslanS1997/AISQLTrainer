@@ -102,12 +102,12 @@ export const LandingPage: React.FC = () => {
             <h2 className="mt-6 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
               Skip Expensive Bootcamps, Master SQL with AI
             </h2>
-            
+
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-gray-600">
               Learn SQL through interactive practice,<br className="hidden sm:inline" /> real-time AI feedback, and professional certification.
               <br className="hidden sm:inline"/>
+              <span className="block mt-8"></span>
             </p>
-            
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {user ? (
                 <Link to="/practice">
@@ -178,7 +178,7 @@ export const LandingPage: React.FC = () => {
               <div className="bg-blue-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Brain className="h-8 w-8 text-white" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-4">SQL Tutor AI</h3>
+                              <h3 className="text-xl font-semibold text-white mb-4">SQL Trainer AI</h3>
               <div className="space-y-3 text-blue-100">
                 <div className="flex items-center text-sm">
                   <div className="w-2 h-2 bg-blue-300 rounded-full mr-3 flex-shrink-0"></div>
@@ -460,6 +460,122 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
+      {/* Why Our Certification is Legitimate Section */}
+      <section className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-secondary-900 mb-4">
+              Why Our Certification is <span className="text-green-600">Legitimate</span>
+            </h2>
+            <p className="text-xl text-secondary-600 max-w-3xl mx-auto">
+              We understand your concerns about certification legitimacy. Here's why our system 
+              provides genuine, verifiable SQL skills that employers can trust.
+            </p>
+          </div>
+          
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="space-y-8">
+                <div className="flex items-start space-x-4">
+                  <div className="bg-green-100 rounded-full p-2 flex-shrink-0">
+                    <Database className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-secondary-900 mb-2">Unique Schema Generation</h3>
+                    <p className="text-secondary-600">Every practice session generates completely unique database schemas based on your prompts. No two users ever see the same questions or data.</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-4">
+                  <div className="bg-blue-100 rounded-full p-2 flex-shrink-0">
+                    <CheckCircle className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-secondary-900 mb-2">Real Query Execution</h3>
+                    <p className="text-secondary-600">Your SQL queries run on actual database engines with populated tables. We verify correctness by executing your code, not just pattern matching.</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-4">
+                  <div className="bg-purple-100 rounded-full p-2 flex-shrink-0">
+                    <Brain className="h-6 w-6 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-secondary-900 mb-2">AI-Powered Verification</h3>
+                    <p className="text-secondary-600">Advanced AI analyzes your query logic, efficiency, and approach - not just the final answer. This prevents memorization and ensures real understanding.</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-4">
+                  <div className="bg-orange-100 rounded-full p-2 flex-shrink-0">
+                    <Trophy className="h-6 w-6 text-orange-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-semibold text-secondary-900 mb-2">Competitive Validation</h3>
+                    <p className="text-secondary-600">Compete against AI agents in real-time challenges. Your performance metrics provide additional proof of your capabilities.</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-8 bg-gradient-to-r from-green-600 to-green-700 rounded-lg p-6 text-white">
+                <h4 className="text-lg font-semibold mb-2">🛡️ Anti-Cheating Measures</h4>
+                <ul className="space-y-2 text-green-100">
+                  <li>• No answer banks or test banks to memorize</li>
+                  <li>• Unique scenarios for every practice session</li>
+                  <li>• Real-time query execution and validation</li>
+                  <li>• AI analysis of problem-solving approach</li>
+                  <li>• Performance tracking across multiple sessions</li>
+                </ul>
+              </div>
+            </div>
+            
+            {/* Legitimacy Comparison */}
+            <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl shadow-xl p-8 border border-gray-200">
+              <h3 className="text-2xl font-bold text-secondary-900 mb-6 text-center">
+                Traditional vs. Our Approach
+              </h3>
+              
+              <div className="space-y-6">
+                <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
+                  <h4 className="font-semibold text-red-800 mb-2">❌ Traditional Bootcamps</h4>
+                  <ul className="text-sm text-red-700 space-y-1">
+                    <li>• Reuse popular test banks every semester</li>
+                    <li>• Answers available online for memorization</li>
+                    <li>• Limited verification of actual skills</li>
+                    <li>• Same curriculum year after year</li>
+                  </ul>
+                </div>
+                
+                <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
+                  <h4 className="font-semibold text-green-800 mb-2">✅ SQL Trainer AI</h4>
+                  <ul className="text-sm text-green-700 space-y-1">
+                    <li>• Unique schemas generated for each session</li>
+                    <li>• Real database execution and validation</li>
+                    <li>• AI analysis of problem-solving approach</li>
+                    <li>• Continuous adaptation and improvement</li>
+                  </ul>
+                </div>
+                
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                  <h4 className="font-semibold text-blue-800 mb-2">💡 The Reality</h4>
+                  <p className="text-sm text-blue-700">
+                    Even at elite universities like Harvard, students can get help from others or find answers online. 
+                    Our system focuses on <strong>verifiable skill demonstration</strong> rather than just preventing all forms of assistance.
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mt-6 text-center">
+                <div className="inline-flex items-center bg-green-100 text-green-800 px-4 py-2 rounded-full text-sm font-medium">
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Legitimate because it's verifiable
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Section */}
       <section className="py-24 bg-gradient-to-br from-blue-600 to-blue-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -556,16 +672,19 @@ export const LandingPage: React.FC = () => {
           </div>
           
           {/* Traditional Footer Links */}
-          <div className="grid md:grid-cols-4 gap-8 mb-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <Database className="h-8 w-8 text-primary-400" />
-                <span className="text-xl font-bold">SQL Tutor AI</span>
+                      <div className="grid md:grid-cols-4 gap-8 mb-8">
+              <div>
+                <div className="flex items-center space-x-2 mb-4">
+                  <img 
+                    src="/images/SQLTrainerAI.png" 
+                    alt="SQL Trainer AI" 
+                    className="h-8 w-auto" 
+                  />
+                </div>
+                <p className="text-secondary-400">
+                  Master SQL with AI-powered practice and real-time feedback.
+                </p>
               </div>
-              <p className="text-secondary-400">
-                Master SQL with AI-powered practice and real-time feedback.
-              </p>
-            </div>
             <div>
               <h3 className="font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-secondary-400">

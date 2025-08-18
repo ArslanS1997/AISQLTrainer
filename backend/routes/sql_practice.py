@@ -1,5 +1,5 @@
 """
-SQL Practice routes for SQL Tutor AI backend.
+SQL Practice routes for SQL Trainer AI backend.
 Handles schema generation, query execution, and practice sessions.
 """
 

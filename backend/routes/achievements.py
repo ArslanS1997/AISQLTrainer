@@ -1,5 +1,5 @@
 """
-Dashboard routes for SQL Tutor AI backend.
+Dashboard routes for SQL Trainer AI backend.
 Handles user statistics, progress tracking, and analytics.
 """
 

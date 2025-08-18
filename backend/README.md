@@ -1,6 +1,6 @@
-# SQL Tutor AI Backend
+# SQL Trainer AI Backend
 
-FastAPI backend for the SQL Tutor AI application.
+FastAPI backend for the SQL Trainer AI application.
 
 ## Features
 

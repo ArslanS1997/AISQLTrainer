@@ -1,5 +1,5 @@
 """
-Authentication routes for SQL Tutor AI backend.
+Authentication routes for SQL Trainer AI backend.
 Handles Google OAuth and user session management.
 """
 

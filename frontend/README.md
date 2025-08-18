@@ -1,6 +1,6 @@
-# SQL Tutor AI Frontend
+# SQL Trainer AI Frontend
 
-A modern, responsive React frontend for the SQL Tutor AI application that provides an interactive SQL learning experience.
+A modern, responsive React frontend for the SQL Trainer AI application that provides an interactive SQL learning experience.
 
 ## Features
 
@@ -67,7 +67,7 @@ A modern, responsive React frontend for the SQL Tutor AI application that provid
 
 ## API Integration
 
-The frontend integrates with the SQL Tutor AI backend through:
+The frontend integrates with the SQL Trainer AI backend through:
 - Schema generation and validation
 - Question generation based on topic/difficulty
 - SQL query execution and validation

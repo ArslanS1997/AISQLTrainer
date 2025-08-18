@@ -1,5 +1,5 @@
 """
-Database models for SQL Tutor AI backend using SQLAlchemy ORM.
+Database models for SQL Trainer AI backend using SQLAlchemy ORM.
 """
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON
@@ -71,49 +71,85 @@ class Session(Base):
     user = relationship("User", back_populates="sessions")
     schema = relationship("Schema", back_populates="sessions")
 
-class CompetitionSubmission(Base):
-    """Competition submission model for user vs AI competitions."""
+
+class Competition(Base):
+    """Competition model for user vs AI competitions."""
     __tablename__ = "competition_submissions"
-    
+
     id = Column(String(255), primary_key=True, default=generate_uuid)
-    competition_id = Column(String(255), nullable=False)  # Remove FK constraint for now
+    competition_id = Column(String(255), nullable=False)  # Not a FK, used for API lookups
     user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
-    
+
     # Competition details
-    difficulty = Column(String(50), nullable=False)  # basic, intermediate, advanced
-    schema_ddl = Column(Text, nullable=False)  # ADD THIS - The schema DDL for this competition
-    questions = Column(JSON, nullable=False)  # ADD THIS - List of 5 pre-generated questions
+    difficulty = Column(String(50), nullable=False)  # 'basic', 'intermediate', 'advanced'
+    schema_ddl = Column(Text, nullable=False)  # The schema DDL for this competition
+    questions = Column(JSON, nullable=False)  # List of 5 pre-generated questions
     total_rounds = Column(Integer, default=5)
-    current_round = Column(Integer, default=1)  # ADD THIS - Track current round
-    
+    current_round = Column(Integer, default=1)
+
     # Timing
     time_limit = Column(Integer, default=180)  # User gets 3 minutes total
     ai_time_limit = Column(Integer, default=30)  # AI gets 30 seconds per question
     started_at = Column(DateTime, default=func.now())
-    expires_at = Column(DateTime, nullable=False)  # ADD THIS
-    completed_at = Column(DateTime)  # ADD THIS
-    
+    expires_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime)
+
     # User performance
     user_queries = Column(JSON, default=list)  # List of user's SQL queries
-    user_score = Column(Integer, default=0)  # Total points earned
+    user_score = Column(Integer, default=0)
     user_correct_answers = Column(Integer, default=0)
-    
+
     # AI performance
-    ai_queries = Column(JSON, default=list)  # List of AI's SQL queries  
-    ai_score = Column(Integer, default=0)  # Total AI points
+    ai_queries = Column(JSON, default=list)  # List of AI's SQL queries
+    ai_score = Column(Integer, default=0)
     ai_correct_answers = Column(Integer, default=0)
-    
-    # Result
+
+    # Result and status
     result = Column(String(10))  # 'win', 'lose', 'tie'
-    total_time_taken = Column(Integer, default=0)  # Total seconds
-    status = Column(String(20), default='active')  # active, completed, expired
-    
+    total_time_taken = Column(Integer, default=0)
+    status = Column(String(20), default='active')  # 'active', 'completed', 'expired'
+
     # Metadata
     submitted_at = Column(DateTime, default=func.now())
-    rounds_data = Column(JSON, default=list)  # Detailed round-by-round data
-    
+    rounds_data = Column(JSON, default=list)  # List of dicts, one per round
+
     # Relationships
     user = relationship("User", back_populates="competition_submissions")
+    rounds = relationship("CompetitionRound", back_populates="competition", cascade="all, delete-orphan")
+
+
+class CompetitionRound(Base):
+    """Round-level model for each round in a competition."""
+    __tablename__ = "competition_rounds"
+
+    competition_id = Column(String(255), ForeignKey("competition_submissions.competition_id"), primary_key=True)
+    round_number = Column(Integer, primary_key=True)  # 1, 2, 3, ...
+
+    # Question and SQLs
+    question = Column(Text, nullable=False)
+    user_sql = Column(Text)
+    ai_sql = Column(Text)
+
+    # Results
+    user_correct = Column(Boolean, default=False)
+    ai_correct = Column(Boolean, default=False)
+    user_points = Column(Integer, default=0)
+    ai_points = Column(Integer, default=0)
+    correct_answer = Column(Text)
+    explanation = Column(Text)
+
+    # Timing
+    user_response_time = Column(Integer)  # in seconds
+    ai_response_time = Column(Integer)    # in seconds
+
+    # Metadata
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    competition = relationship("Competition", back_populates="rounds")
+    rounds = relationship("CompetitionRound", back_populates="competition", cascade="all, delete-orphan")
+
+
 
 class SubscriptionPlan(Base):
     """Subscription plan model for defining available plans."""

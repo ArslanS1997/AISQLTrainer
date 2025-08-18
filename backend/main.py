@@ -1,5 +1,5 @@
 """
-Main FastAPI application for SQL Tutor AI backend.
+Main FastAPI application for SQL Trainer AI backend.
 """
 
 from fastapi import FastAPI
@@ -32,11 +32,11 @@ default_lm = dspy.LM(
     api_key=os.getenv(AI_MODELS['free']['api_key_env']),
     max_tokens=AI_MODELS['free']['max_tokens']
 )
-dspy.settings.configure(lm=default_lm)
+dspy.settings.configure(lm=default_lm, async_max_workers=25)
 
 app = FastAPI(
-    title="SQL Tutor AI API",
-    description="Backend API for SQL Tutor AI application",
+    title="SQL Trainer AI API",
+          description="Backend API for SQL Trainer AI application",
     version="1.0.0"
 )
 

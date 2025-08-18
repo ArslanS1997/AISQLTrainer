@@ -1,5 +1,5 @@
 """
-Pydantic schemas for request/response validation in SQL Tutor AI backend.
+Pydantic schemas for request/response validation in SQL Trainer AI backend.
 """
 
 from pydantic import BaseModel, EmailStr
@@ -170,13 +170,13 @@ class CompetitionQuestion(BaseModel):
 
 # Updated Competition Schemas
 class CompetitionStartRequest(BaseModel):
-    difficulty: str = "beginner"
+    difficulty: str 
 
 class CompetitionStartResponse(BaseModel):
     competition_id: str
     difficulty: str
     schema_ddl: str
-    questions: List[CompetitionQuestion]  # ADD THIS - All 5 questions at start
+    questions: List[str]  # ADD THIS - All 5 questions at start
     total_rounds: int
     current_round: int
     time_limit: int  # Total time for user (3 minutes = 180 seconds)
@@ -185,20 +185,32 @@ class CompetitionStartResponse(BaseModel):
     expires_at: datetime
     status: str
 
-class CompetitionQuestionRequest(BaseModel):
-    competition_id: str
-
-class CompetitionQuestionResponse(BaseModel):
-    competition_id: str
-    round: int
-    question: str
-    time_remaining: int
-    schema_ddl: str  # Frontend needs schema for display
+ # Frontend needs schema for display
 
 class CompetitionSubmitRequest(BaseModel):
     competition_id: str
     round: int
     user_query: str
+
+class isCorrectCompResponse(BaseModel):
+    response_type: str
+    is_executable: bool
+    is_correct: bool
+    in_time: bool
+    round: int
+    points: int
+    result: str
+    explanation:str 
+
+class HumanIsCorrectRequest(BaseModel):
+    competition_id: str
+    question: str
+    sql: str
+    difficulty: str 
+    round: int
+    time_limit: int
+    response_time: int
+
 
 class CompetitionSubmitResponse(BaseModel):
     success: bool
@@ -213,21 +225,33 @@ class CompetitionSubmitResponse(BaseModel):
     next_round: Optional[int] = None
     competition_completed: bool
 
-class CompetitionIsCorrectRequest(BaseModel):
+class AIIsCorrectRequest(BaseModel):
     competition_id: str
-    round: int
     question: str
-    user_query: str
-    ai_query: str
-    schema_ddl: str
+    sql: str
+    difficulty: str
+    round: int
+    time_limit: int
+    response_time: int
 
-class CompetitionIsCorrectResponse(BaseModel):
-    user_correct: bool
-    ai_correct: bool
-    explanation: str
-    correct_answer: str
-    user_points: int
-    ai_points: int
+class WinnerExplanationRequest(BaseModel):
+    competition_id: str
+    question: str
+    human_explanation:str
+    ai_explanation:str
+    human_sql:str
+    ai_sql:str
+    round: int
+    human_iscorrect: bool
+    ai_iscorrect:bool
+
+class WinnerExplanationResponse(BaseModel):
+    competition_id:str
+    round: int
+    winner: str
+    correct_sql:str
+    explanation:str
+
 
 class CompetitionStatusRequest(BaseModel):
     competition_id: str
@@ -249,13 +273,16 @@ class CompetitionResultRequest(BaseModel):
 class CompetitionResultResponse(BaseModel):
     competition_id: str
     final_result: str  # win, lose, tie
-    user_score: int
-    ai_score: int
+    user_points: int
+    ai_points: int
     rounds_data: List[Dict[str, Any]]
     can_get_certificate: bool
     certificate_message: str
     schema_ddl: str
-    questions: List[CompetitionQuestion]  # ADD THIS - For review purposes
+    questions: List[str] 
+    
+    
+     # ADD THIS - For review purposes
 
 class CompetitionHistoryResponse(BaseModel):
     competition_id: str

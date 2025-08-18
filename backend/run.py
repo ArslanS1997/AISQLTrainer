@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run script for SQL Tutor AI FastAPI backend.
+Run script for SQL Trainer AI FastAPI backend.
 """
 
 import uvicorn
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     reload = os.getenv("ENVIRONMENT", "development") == "development"
     
-    print(f"🚀 Starting SQL Tutor AI Backend...")
+    print(f"🚀 Starting SQL Trainer AI Backend...")
     print(f"📍 Host: {host}")
     print(f"🔌 Port: {port}")
     print(f"🔄 Reload: {reload}")

@@ -93,7 +93,7 @@ class basic_questions_gen(dspy.Signature):
     - An optional topic (`topic`) such as SELECT, WHERE, JOIN, GROUP BY, etc.
 
     Your task:
-    - Generate 5 beginner-level SQL questions based on the provided schema and topic.
+    - Generate 10 beginner-level SQL questions based on the provided schema and topic.
     - If the topic is 'All', cover a variety of fundamental SQL concepts like:
         - SELECT specific columns
         - Filtering with WHERE
@@ -120,7 +120,7 @@ class intermediate_questions_gen(dspy.Signature):
     - An optional topic (`topic`) such as JOINs, GROUP BY, subqueries, etc.
 
     Your task:
-    - Generate 5 intermediate-level SQL practice questions that go beyond the basics.
+    - Generate 10 intermediate-level SQL practice questions that go beyond the basics.
     - If the topic is 'All', include a mix of intermediate concepts like:
         - Multi-table JOINs (INNER, LEFT)
         - GROUP BY with aggregate functions
@@ -147,7 +147,7 @@ class hard_questions_gen(dspy.Signature):
     - An optional topic (`topic`) such as advanced JOINs, window functions, CTEs, advanced subqueries, etc.
 
     Your task:
-    - Generate 5 hard-level SQL practice questions that challenge the user’s mastery of SQL.
+    - Generate 10 hard-level SQL practice questions that challenge the user’s mastery of SQL.
     - If the topic is 'All', include a mix of advanced SQL concepts such as:
         - Writing nested subqueries with correlation
         - Using CTEs (WITH clause)
@@ -165,6 +165,92 @@ class hard_questions_gen(dspy.Signature):
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
     questions: List[str] = dspy.OutputField(desc="10 questions separated by commas for hard difficulty")
 
+class competition_basic_questions_gen(dspy.Signature):
+    """
+    You are part of an AI-powered SQL competition system designed to test beginners in head-to-head SQL challenges.
+    
+    Given:
+    - A DuckDB database schema (`db_schema`) which includes tables and their columns.
+    - An optional topic (`topic`) such as SELECT, WHERE, JOIN, GROUP BY, etc.
+
+    Your task:
+    - Generate 5 beginner-level SQL questions for a timed competition round.
+    - Questions should be solvable within 2-3 minutes by a beginner.
+    - If the topic is 'All', cover fundamental SQL concepts like:
+        - SELECT specific columns
+        - Filtering with WHERE
+        - Sorting using ORDER BY
+        - Using aggregate functions like COUNT or SUM
+        - Limiting output with LIMIT
+
+    Format:
+    - Generate a List[str] of 5 competition questions
+    - Questions should be clearly worded and directly related to the schema.
+    - Each question should be independent and not build on previous ones.
+    - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
+    """
+    db_schema = dspy.InputField(desc="The schema of the DuckDB database")
+    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
+    questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for basic difficulty")
+
+class competition_intermediate_questions_gen(dspy.Signature):
+    """
+    You are part of an AI-powered SQL competition system designed to test intermediate users in head-to-head SQL challenges.
+
+    Given:
+    - A DuckDB database schema (`db_schema`) which includes tables and their columns.
+    - An optional topic (`topic`) such as JOINs, GROUP BY, subqueries, etc.
+
+    Your task:
+    - Generate 5 intermediate-level SQL competition questions for a timed round.
+    - Questions should be solvable within 3-4 minutes by an intermediate user.
+    - If the topic is 'All', include intermediate concepts like:
+        - Multi-table JOINs (INNER, LEFT)
+        - GROUP BY with aggregate functions
+        - HAVING clause usage
+        - Subqueries in SELECT or WHERE
+        - Filtering with IN, BETWEEN, or LIKE
+
+    Format:
+    - Generate a List[str] of 5 competition questions
+    - Questions should be clearly worded, relevant to the schema, and test SQL logic.
+    - Each question should be independent and not build on previous ones.
+    - Separate questions by commas, don't use commas anywhere else except for separation.
+    - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
+    """
+    db_schema = dspy.InputField(desc="The schema of the DuckDB database")
+    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
+    questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for intermediate difficulty")
+
+class competition_hard_questions_gen(dspy.Signature):
+    """
+    You are part of an AI-powered SQL competition system designed to test advanced users in head-to-head SQL challenges.
+
+    Given:
+    - A DuckDB database schema (`db_schema`) which includes tables and their columns.
+    - An optional topic (`topic`) such as advanced JOINs, window functions, CTEs, etc.
+
+    Your task:
+    - Generate 5 hard-level SQL competition questions for a timed round.
+    - Questions should be solvable within 4-5 minutes by an advanced user.
+    - If the topic is 'All', include advanced SQL concepts such as:
+        - Writing nested subqueries with correlation
+        - Using CTEs (WITH clause)
+        - Applying window functions (e.g., RANK, ROW_NUMBER)
+        - Complex filtering and multi-level aggregation
+        - Advanced set operations like INTERSECT, EXCEPT
+
+    Format:
+    - Generate a List[str] of 5 competition questions
+    - Questions should be challenging, realistic, and require multiple steps to solve.
+    - Each question should be independent and not build on previous ones.
+    - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
+    """
+    db_schema = dspy.InputField(desc="The schema of the DuckDB database")
+    topic = dspy.InputField(desc="The SQL topic for this competition round", default="All")
+    questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for hard difficulty")
+
+
 
 class question_generator(dspy.Module):
     def __init__(self):
@@ -178,7 +264,50 @@ class question_generator(dspy.Module):
         response = generator(db_schema=schema, topic=topic)
         return response
 
+class competition_question_generator(dspy.Module):
+    """
+    Generates 5 competition questions for a given schema, topic, and difficulty using the competition_*_questions_gen signatures.
+    """
+    def __init__(self):
+        self.competition_generators = {
+            'basic': dspy.Predict(competition_basic_questions_gen),
+            'intermediate': dspy.Predict(competition_intermediate_questions_gen),
+            'advanced': dspy.Predict(competition_hard_questions_gen)
+        }
 
+    def forward(self, schema, difficulty):
+        generator = self.competition_generators[difficulty.lower()]
+        response = generator(db_schema=schema)
+        return response
+
+
+class both_wrong_explanation_gen(dspy.Signature):
+    """
+    You are an expert SQL tutor and competition judge.
+
+    Given:
+    - `question`: The original competition question (as a string).
+    - `human_wrong_explanation`: A clear explanation of why the human's SQL submission was incorrect.
+    - `ai_wrong_explanation`: A clear explanation of why the AI's SQL submission was incorrect.
+
+    Your task:
+    1. Carefully consider the competition question and the explanations for why both the human and AI queries were wrong.
+    2. Generate the correct SQL query that fully and accurately answers the original question.
+    3. Write a detailed, step-by-step, beginner-friendly explanation that:
+        - Summarizes the main mistakes made by both the human and AI (using the provided explanations).
+        - Clearly explains how to approach and solve the question correctly.
+        - Walks through the correct SQL query and why it works.
+    4. Be supportive and constructive in your feedback, and avoid technical jargon where possible.
+
+    Output:
+    - `correct_sql`: The correct SQL query for the question.
+    - `explanation`: A detailed, supportive explanation of the outcome, referencing the mistakes in each submission and how to arrive at the correct answer.
+    """
+    question = dspy.InputField(desc="The original competition question")
+    human_wrong_explanation = dspy.InputField(desc="Explanation of why the human's SQL was wrong")
+    ai_wrong_explanation = dspy.InputField(desc="Explanation of why the AI's SQL was wrong")
+    correct_sql = dspy.OutputField(desc="The correct SQL query for the question")
+    explanation = dspy.OutputField(desc="Detailed, supportive explanation of the mistakes and the correct answer")
 
 
 
@@ -186,25 +315,49 @@ class explanation_gen(dspy.Signature):
     """
 You are an AI SQL tutor helping beginners understand and correct their SQL mistakes in a supportive, non-technical way.
 
-Given:
-- `error_generated`: This is the exact error message returned by the DuckDB engine after running a SQL query.
-- `faulty_sql`: This is the original incorrect SQL query that caused the error.
+Given:  
+- `error_generated`: This is the exact error message returned by DuckDB after running a SQL query.  
+- `faulty_sql`: The original incorrect SQL query that caused the error.  
 
-Your task:
-1. Carefully analyze both the error message and the query to figure out *exactly* what the user did wrong.
-2. Write a short, easy-to-understand paragraph explaining the mistake in plain English — imagine you're explaining it to someone new to SQL.
-   - Avoid jargon or overly technical terms.
-   - If helpful, use simple examples or analogies (like explaining a typo in a sentence or choosing the wrong tool for a task).
-   - Be kind and encouraging in tone — the goal is to help the user learn and not feel discouraged.
-3. Provide a corrected version of the query.
-   - Make sure the new query is functional and matches the user's likely intention.
-   - DO NOT just repeat the original query — fix the mistake.
+Your task:  
+1. Analyze both the error message and query to identify exactly what went wrong.  
+2. Explain the mistake in plain, easy-to-understand English as if teaching a beginner—avoid jargon, and be kind and encouraging.  
+3. Provide a corrected, working version of the query that matches the likely user intention without simply repeating the original.
 
-Format:
-- One paragraph explanation (plain English, helpful tone)
-- One corrected query (code block)
 
-Think like a patient tutor. Focus on understanding, not just fixing.
+
+Example of a common mistake involving joins and subqueries causing a logic or syntax error:
+
+Faulty query:
+
+SELECT c.customer_id, c.first_name, o.order_id
+FROM customers c
+JOIN orders o
+ON c.customer_id = o.customer_id
+WHERE o.order_date > '2023-01-01'
+AND RANK() OVER (PARTITION BY c.customer_id ORDER BY o.order_date DESC) = 1;
+
+
+Explanation:  
+Here, you tried to use the `RANK()` window function directly in the `WHERE` clause to get the most recent order for each customer. But window functions like `RANK()` can’t be 
+used in `WHERE` because SQL needs to filter rows before it calculates those window functions — kind of like trying to judge the winners of a race before the race has even been run! 
+To fix this, you should calculate ranks inside a subquery first, then filter in an outer query, 
+separating the steps clearly. This approach is more reliable and easier for the database to understand.
+
+Corrected query:
+
+SELECT customer_id, first_name, order_id
+FROM (
+  SELECT c.customer_id, c.first_name, o.order_id,
+         RANK() OVER (PARTITION BY c.customer_id ORDER BY o.order_date DESC) AS order_rank
+  FROM customers c
+  JOIN orders o ON c.customer_id = o.customer_id
+  WHERE o.order_date > '2023-01-01'
+) sub
+WHERE order_rank = 1;
+
+This query first joins customers and orders, ranks the orders per customer by the most recent date inside a subquery, and then selects the top-ranked order in the outer query. 
+This step-by-step method avoids errors and achieves what you wanted: finding the latest order for each customer after January 1, 2023.
     """
     error_generated = dspy.InputField(desc="The error generated by the system")
     faulty_sql = dspy.InputField(desc="The SQL user entered into the system")
@@ -213,14 +366,30 @@ Think like a patient tutor. Focus on understanding, not just fixing.
 class check_answer(dspy.Signature):
     """
     You are an AI SQL trainer. A question was asked, and the user responded with a SQL query.
-    You are given:
-    - The original question.
-    - The user's SQL query.
-    - The head of the resulting table when the SQL was executed.
 
-    Your job:
-    1. Decide whether the SQL correctly answers the question. Return `True` if it does, otherwise `False`.
-    2. Provide a brief 2-line explanation justifying your evaluation. Mention specific reasons the SQL is correct or where it fails (e.g., incorrect filter, missing column, wrong aggregation, etc.).
+    You are given:
+    - The original question (in natural language).
+    - The user's SQL query (as written by the user).
+    - The head (first few rows) of the resulting table when the SQL was executed.
+
+    Your job is to:
+    1. Carefully analyze whether the SQL query correctly and fully answers the original question, based on the result table.
+    2. Return `True` if the SQL is fully correct, or `False` if it is incorrect or only partially correct.
+    3. Provide a brief, specific 2-line explanation justifying your evaluation. Your explanation should mention exactly what is correct or incorrect, such as:
+       - If the SQL is correct, state what it does right (e.g., "The query selects the correct columns and applies the required filter for sales in 2023. The result matches the question's intent.").
+       - If the SQL is incorrect, specify the main issue (e.g., "The query misses the WHERE clause to filter for 2023 sales. It returns all years, not just 2023.").
+
+    Example:
+    - Question: "List the names of all customers who made a purchase in 2023."
+    - SQL: `SELECT name FROM customers JOIN purchases ON customers.id = purchases.customer_id;`
+    - Table head: | name         |
+                  |--------------|
+                  | Alice Smith  |
+                  | Bob Johnson  |
+    - is_correct: False
+    - explanation: "The query joins customers and purchases but does not filter for purchases in 2023. It returns all customers with any purchase, not just those in 2023."
+
+    Be concise, specific, and focus on the main reason for correctness or error.
     """
     question = dspy.InputField(desc="The original natural language question that was asked")
     sql = dspy.InputField(desc="The SQL query written by the user in response to the question")
@@ -334,7 +503,7 @@ class redo_schema(dspy.Signature):
     schema_sql = dspy.OutputField(desc="The new duckdb schema that avoids the error, it must answer the query as well")
 
 
-import dspy
+
 
 class sql_generator(dspy.Signature):
     """
@@ -510,13 +679,15 @@ class text2sqlagent(dspy.Module):
 # dspy.settings.configure(lm=lm)
 create_schema_agent = dspy.asyncify(dspy.Predict(create_schema))
 populate_table_agent = dspy.asyncify(dspy.Predict(populate_table))
-# basic_questions_gen_agent = dspy.asyncify(dspy.Predict(basic_questions_gen))
-# hard_questions_gen_agent = dspy.asyncify(dspy.Predict(hard_questions_gen))
-# intermediate_questions_gen_agent = dspy.asyncify(dspy.Predict(intermediate_questions_gen))
+
 question_generator_agent = dspy.asyncify(question_generator())
+competition_question_gen_agent = dspy.asyncify(competition_question_generator())
 explanation_gen_agent = dspy.asyncify(dspy.Predict(explanation_gen))
 check_correct_agent = dspy.asyncify(dspy.Predict(check_answer))
 code_rewritter_agent = dspy.asyncify(dspy.Predict(code_fix))
+
+both_wrong_explanation_gen = dspy.asyncify(dspy.Predict(both_wrong_explanation_gen))
+
 
 redo_schema_agent = dspy.asyncify(dspy.Predict(redo_schema))
 

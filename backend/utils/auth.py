@@ -1,5 +1,5 @@
 """
-Authentication utilities for SQL Tutor AI backend.
+Authentication utilities for SQL Trainer AI backend.
 Handles JWT token creation, verification, and Google OAuth integration.
 """
 
