@@ -304,7 +304,7 @@ class DashboardStatsResponse(BaseModel):
     average_score: float
     total_points: int
     current_streak: int
-    best_rank: Optional[int] = None
+    # best_rank field removed
 
 class ProgressResponse(BaseModel):
     beginner_completed: int

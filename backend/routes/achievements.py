@@ -16,8 +16,7 @@ from models.database import Competition
 from utils.subscription_service import SubscriptionService
 
 router = APIRouter(prefix="/api/achievements", tags=["Achievements"])
-
-# Fix the average score calculation
+# Fix the average score calculation and remove rank (competition has no ranks, just points/wins)
 @router.get("/stats", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
     current_user: Any = Depends(get_current_user),
@@ -37,8 +36,7 @@ async def get_dashboard_stats(
             total_competitions=0,
             average_score=0.0,
             total_points=0,
-            current_streak=0,
-            best_rank=None
+            current_streak=0
         )
 
     for session in sessions:
@@ -70,21 +68,12 @@ async def get_dashboard_stats(
         elif session_date < today - timedelta(days=current_streak):
             break
 
-    # Best competition rank
-    best_rank = None
-    user_submissions = db.query(Competition).filter(Competition.user_id == user_id).all()
-    for sub in user_submissions:
-        if sub.rank is not None:
-            if best_rank is None or sub.rank < best_rank:
-                best_rank = sub.rank
-
     return DashboardStatsResponse(
         total_practice_sessions=total_practice_sessions,
         total_competitions=total_competitions,
         average_score=average_score,
         total_points=total_points,
-        current_streak=current_streak,
-        best_rank=best_rank
+        current_streak=current_streak
     )
 
 @router.get("/progress", response_model=ProgressResponse)

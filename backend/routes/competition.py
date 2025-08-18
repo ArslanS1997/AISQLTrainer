@@ -250,7 +250,7 @@ async def get_competition_result(
     )
 
 
-@router.get("/human-iscorrect", response_model=isCorrectCompResponse)
+@router.post("/human-iscorrect", response_model=isCorrectCompResponse)
 async def check_human_response(
     request: HumanIsCorrectRequest,
     current_user: Any = Depends(get_current_user),
@@ -337,7 +337,7 @@ async def check_human_response(
             )
 
 
-@router.get("/ai-iscorrect", response_model=isCorrectCompResponse)
+@router.post("/ai-iscorrect", response_model=isCorrectCompResponse)
 async def check_ai_response(
     request: AIIsCorrectRequest,
     current_user: Any = Depends(get_current_user),
