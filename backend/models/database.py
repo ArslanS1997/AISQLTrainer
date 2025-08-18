@@ -126,6 +126,7 @@ class CompetitionRound(Base):
 
     # Question and SQLs
     question = Column(Text, nullable=False)
+    difficulty = Column(String(50), nullable=False)  # 'basic', 'intermediate', 'advanced'
     user_sql = Column(Text)
     ai_sql = Column(Text)
 

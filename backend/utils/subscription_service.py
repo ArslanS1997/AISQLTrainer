@@ -82,6 +82,8 @@ class SubscriptionService:
             self.db.refresh(subscription)
         
         plan_config = PLAN_CONFIGS.get(subscription.plan, PLAN_CONFIGS['free'])
+        print(f"Getting plan for user: {user_id}")
+        print(f"User plan: {plan_config}")
         return {
             'name': subscription.plan,
             'display_name': plan_config['display_name'],

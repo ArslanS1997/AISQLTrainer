@@ -68,6 +68,7 @@ async def start_competition(
     request: CompetitionStartRequest,
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
+
 ):
     """Start a new User vs AI competition."""
     if not current_user:
@@ -86,28 +87,34 @@ async def start_competition(
     
     # Create a temporary DuckDB connection to get schema information
     temp_conn = duckdb.connect(database=selected_schema_path)
+
     
     # Get the DDL (CREATE TABLE statements) for all tables in the selected schema
-    tables_rows = temp_conn.execute("SELECT * FROM information_schema.tables").fetchall()
-    tables_columns = [desc[0] for desc in temp_conn.description]
-    tables_str = "information_schema.tables:\n"
-    tables_str += "\t" + "\t".join(tables_columns) + "\n"
-    for row in tables_rows:
-        tables_str += "\t" + "\t".join(str(col) for col in row) + "\n"
-
-    # Get information_schema.columns
-    columns_rows = temp_conn.execute("SELECT * FROM information_schema.columns").fetchall()
-    columns_columns = [desc[0] for desc in temp_conn.description]
-    columns_str = "information_schema.columns:\n"
-    columns_str += "\t" + "\t".join(columns_columns) + "\n"
-    for row in columns_rows:
-        columns_str += "\t" + "\t".join(str(col) for col in row) + "\n"
+    # Get all table names in the schema
+    table_names = [row[0] for row in temp_conn.execute("SHOW TABLES").fetchall()]
+    
+    num_tables = len(table_names)
+    print(f"Number of tables in selected schema: {num_tables}")
+    if num_tables == 0:
+        raise HTTPException(status_code=500, detail="Selected schema has no tables or data.")
+    for table in table_names:
+        # Get the schema for each table using DESCRIBE
+        describe_result = temp_conn.execute(f"DESCRIBE {table}").fetchdf()
+        # Build a CREATE TABLE statement from the DESCRIBE output
+        columns = []
+        for _, row in describe_result.iterrows():
+            col_name = row['column_name']
+            col_type = row['column_type']
+            columns.append(f'"{col_name}" {col_type}')
+        create_stmt = f'CREATE TABLE "{table}" (\n  ' + ',\n  '.join(columns) + '\n);'
+        ddl_list.append(create_stmt)
+    tables_str = "\n\n".join(ddl_list)
 
     # Combine all into a single schema_ddl string
-    schema_ddl = tables_str + "\n" + columns_str
+    schema_ddl = tables_str 
     
     # Close temporary connection
-    temp_conn.close()
+
 
     # Generate questions using the AI agent
     questions = await competition_question_gen_agent(schema=schema_ddl, difficulty=request.difficulty)
@@ -130,7 +137,7 @@ async def start_competition(
         user_id=current_user.id,
         difficulty=request.difficulty,
         schema_ddl=schema_ddl,
-        questions=questions,
+        questions=questions.questions,
         total_rounds=5,
         current_round=1,
         time_limit=180,  # 3 minutes total
