@@ -138,6 +138,7 @@ class SessionResponse(BaseModel):
 # ============================================================================
 class AICompetitionRequest(BaseModel):
     competition_id: str
+    round: int
     question: str
     schema_ddl: str
     difficulty: str
@@ -147,6 +148,7 @@ class AICompetitionResponse(BaseModel):
     competition_id: str
     answer: str
     difficulty: str
+    round: int
     in_time: bool
     
 
@@ -202,12 +204,12 @@ class isCorrectCompResponse(BaseModel):
     response_type: str
     is_executable: bool
     is_correct: bool
-    in_time: bool
+    in_time: bool  # Add this missing field
     round: int
     points: int
     result: str
     explanation: str
-    ai_sql: str = ""  # Add this field for AI responses
+    ai_sql: str = ""  # For AI responses
 
 class HumanIsCorrectRequest(BaseModel):
     competition_id: str
@@ -245,12 +247,13 @@ class WinnerExplanationRequest(BaseModel):
     competition_id: str
     round: int
     question: str
-    human_explanation:str
-    ai_explanation:str
-    human_sql:str
-    ai_sql:str
+    human_explanation: str
+    ai_explanation: str
+    human_sql: str
+    ai_sql: str
     human_iscorrect: bool
-    ai_iscorrect:bool
+    ai_iscorrect: bool
+    difficulty: str  # ADD THIS MISSING FIELD
 
 class WinnerExplanationResponse(BaseModel):
     competition_id:str

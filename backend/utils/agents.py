@@ -623,7 +623,9 @@ class sql_corrector(dspy.Signature):
     errors = dspy.InputField(desc="The error message returned when executing the faulty SQL.")
     corrected_sql = dspy.OutputField(desc="A corrected SQL query that should execute successfully and answer the question.")
 
-
+basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
+intermediate_lm = dspy.LM('anthropic/claude-3-5-sonnet-20240620',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
+advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
 
 class text2sqlagent(dspy.Module):
     def __init__(self):
@@ -631,10 +633,8 @@ class text2sqlagent(dspy.Module):
         self.difficulty_retries ={'basic':1 , 'intermediate':2, 'advanced':4}
         self.sql_genator_agent = dspy.Predict(sql_generator)
         self.sql_corrector = dspy.Predict(sql_corrector)
-        self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
-        self.intermediate_lm = dspy.LM('anthropic/claude-3-5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
-        self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
-        self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lm}
+        
+        self.llm_dictionary = {'basic':basic_lm, 'intermediate':intermediate_lm, 'advanced':advanced_lm}
 
 
     def forward(self, difficulty, question, schema, conn):

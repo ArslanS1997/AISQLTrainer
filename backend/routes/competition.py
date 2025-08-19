@@ -298,7 +298,7 @@ async def check_human_response(
     round_num = request.round
     difficulty_multiplier = {'basic': 1, "intermediate": 2, "advanced": 4}
 
-    with dspy.context(lm=dspy.LM('openai/gpt-4o-mini'), max_tokens=5000):
+    with dspy.context(lm=default_lm):
         try:
             result = conn.execute(request.sql).fetchdf().head().to_markdown(index=False)
             is_executable = True
@@ -375,16 +375,10 @@ async def check_ai_response(
 ):
     """Check if AI response is correct for a competition round."""
     conn = get_competition_duckdb_conn(request.competition_id)
-    try:
-        loaded_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-        if not loaded_tables:
-            raise HTTPException(status_code=500, detail="No tables loaded in the competition database.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error checking tables in competition database: {str(e)}")
     response_type = 'ai'
     is_executable = False
     is_correct = False
-    in_time = request.time_limit > request.response_time
+    in_time = True  # AI responses are always "in time" since they're pre-generated
     result = ''
     explanation = ''
     points = 0
@@ -402,7 +396,7 @@ async def check_ai_response(
     
     ai_sql = round_record.ai_sql  # Use stored SQL from DB
 
-    with dspy.context(lm=dspy.LM('openai/gpt-4o-mini'), max_tokens=5000):
+    with dspy.context(lm=default_lm):
         try:
             result = conn.execute(ai_sql).fetchdf().head().to_markdown(index=False)
             is_executable = True
@@ -423,11 +417,12 @@ async def check_ai_response(
                 response_type=response_type,
                 is_executable=is_executable,
                 is_correct=is_correct,
+                in_time=in_time,  # ADD THIS MISSING FIELD
                 round=round_num,
                 points=points,
                 result=result,
                 explanation=explanation,
-                ai_sql=ai_sql  # Return the AI SQL
+                ai_sql=ai_sql
             )
         
         if is_executable:
@@ -455,11 +450,12 @@ async def check_ai_response(
                 response_type=response_type,
                 is_executable=is_executable,
                 is_correct=is_correct,
+                in_time=in_time,  # ADD THIS MISSING FIELD
                 round=round_num,
                 points=points,
                 result=result,
                 explanation=explanation,
-                ai_sql=ai_sql  # Return the AI SQL
+                ai_sql=ai_sql
             )
 
 
@@ -497,7 +493,7 @@ async def generate_ai_response(
     # Store AI response in CompetitionRound
     round_record = db.query(CompetitionRound).filter(
         CompetitionRound.competition_id == request.competition_id,
-        CompetitionRound.round_number == 1  # For now, assume round 1
+        CompetitionRound.round_number == request.round  # For now, assume round 1
     ).first()
     
     if round_record:
@@ -509,6 +505,7 @@ async def generate_ai_response(
         competition_id=request.competition_id,
         answer=response['sql'],
         difficulty=request.difficulty,
+        round= request.round, 
         in_time=in_time
     )
 
