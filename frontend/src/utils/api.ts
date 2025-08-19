@@ -258,6 +258,13 @@ export interface AICheckResponse {
 export interface RoundResultRequest {
   competition_id: string;
   round: number;
+  question: string;
+  human_explanation: string;
+  ai_explanation: string;
+  human_sql: string;
+  ai_sql: string;
+  human_iscorrect: boolean;
+  ai_iscorrect: boolean;
 }
 
 export interface RoundResultResponse {
@@ -268,6 +275,23 @@ export interface RoundResultResponse {
   ai_points: number;
   winner: 'human' | 'ai' | 'tie';
   explanation: string;
+}
+
+// Add these interfaces after the existing ones (around line 400, after RoundResultResponse)
+
+export interface AICompetitionRequest {
+  competition_id: string;
+  question: string;
+  schema_ddl: string;
+  difficulty: string;
+  time_limit: number;
+}
+
+export interface AICompetitionResponse {
+  competition_id: string;
+  answer: string;
+  difficulty: string;
+  in_time: boolean;
 }
 
 // API Client
@@ -596,6 +620,18 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // Get AI response for a competition round
+  async getAIResponse(data: AICompetitionRequest): Promise<{ data?: AICompetitionResponse; error?: string }> {
+    return this.request('/api/competition/ai-response', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getStoredAIResponse(competitionId: string, round: number): Promise<{ data?: any; error?: string }> {
+    return this.request(`/api/competition/ai-response/${competitionId}/${round}`);
   }
 }
 

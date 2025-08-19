@@ -627,15 +627,15 @@ class text2sqlagent(dspy.Module):
     def __init__(self):
         
         self.difficulty_retries ={'basic':1 , 'intermediate':2, 'advanced':4}
-        self.sql_genator_agent = dspy.asyncify(dspy.Predict(sql_generator))
-        self.sql_corrector = dspy.asyncify(dspy.Predict(sql_corrector))
+        self.sql_genator_agent = dspy.Predict(sql_generator)
+        self.sql_corrector = dspy.Predict(sql_corrector)
         self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
         self.intermediate_lm = dspy.LM('anthropic/claude-3.5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
         self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
         self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lm}
 
 
-    async def aforward(self, difficulty, question, schema, conn):
+    def forward(self, difficulty, question, schema, conn):
         lm = self.llm_dictionary[difficulty.lower()]
         loop = self.difficulty_retries[difficulty.lower()]
         previous_sql = ''
@@ -647,10 +647,10 @@ class text2sqlagent(dspy.Module):
         with dspy.context(lm=lm):
             for i in range(loop):
                 if i == 0:
-                    response = await self.sql_genator_agent(question=question, sql_schema=schema)
+                    response = self.sql_genator_agent(question=question, sql_schema=schema)
                     sql = response.sql.replace('```', '').replace('sql', '')
                 else:
-                    response = await self.sql_corrector(
+                    response =  self.sql_corrector(
                         question=question,
                         sql_schema=schema,
                         faulty_sql=previous_sql,

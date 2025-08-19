@@ -4,7 +4,7 @@ Handles user statistics, progress tracking, and analytics.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
@@ -146,56 +146,48 @@ async def get_recent_activity(
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Get user's recent activity.
-    Returns recent sessions and competitions.
-    """
+    """Get recent activity for the current user."""
     user_id = current_user.id
 
-    # Recent sessions (last 5)
-    recent_sessions = db.query(DBSession).filter(DBSession.user_id == user_id).order_by(DBSession.created_at.desc()).limit(5).all()
+    # Get recent sessions
+    recent_sessions = db.query(DBSession).filter(
+        DBSession.user_id == user_id
+    ).order_by(DBSession.created_at.desc()).limit(5).all()
+
     sessions_data = [
         {
             "session_id": s.id,
-            "created_at": s.created_at,
-            "total_score": s.total_score,
-            "difficulty": getattr(s, "difficulty", None)
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "total_score": s.total_score or 0
         }
         for s in recent_sessions
     ]
 
-    # Recent competitions (last 5) using CompetitionHistoryResponse
-    recent_competitions = (
-        db.query(Competition)
-        .filter(Competition.user_id == user_id)
-        .order_by(Competition.submitted_at.desc())
-        .limit(5)
-        .all()
-    )
-    if not recent_competitions:
-        competitions_data: List[CompetitionHistoryResponse] = []
-    else:
-        competitions_data: List[CompetitionHistoryResponse] = [
-            CompetitionHistoryResponse(
+    # Get recent competitions
+    recent_competitions = db.query(Competition).filter(
+        Competition.user_id == user_id
+    ).order_by(Competition.started_at.desc()).limit(5).all()
+
+    competitions_data = []
+    for c in recent_competitions:
+        try:
+            # Safely get values with defaults for missing fields
+            competition_data = CompetitionHistoryResponse(
                 competition_id=c.id,
-                # There is no schema_id in Competition model, so set to None
-
-                difficulty=c.difficulty,
-                time_limit=c.time_limit,
-                started_at=c.started_at,
-                expires_at=c.expires_at,
-                # Use user_score as score, since that's the user's score in the competition
-                score=getattr(c, "user_score", None),
-                # There is no rank field in Competition model, so set to None
-                # Use total_time_taken if available, else None
-                time_taken=getattr(c, "total_time_taken", None),
-                # Use completed_at (not submitted_at) for when the competition was finished
-                completed_at=getattr(c, "completed_at", None),
+                difficulty=c.difficulty or 'basic',
+                user_score=getattr(c, "user_score", 0) or 0,  # Default to 0
+                ai_score=getattr(c, "ai_score", 0) or 0,      # Default to 0
+                result=getattr(c, "result", "in_progress") or "in_progress",  # Default to "in_progress"
+                completed_at=c.completed_at or c.started_at,  # Use started_at if completed_at is None
+                total_time_taken=getattr(c, "total_time_taken", 0) or 0,  # Default to 0
+                questions=[]  # Default to empty list for now
             )
-            for c in recent_competitions
-        ]
+            competitions_data.append(competition_data)
+        except Exception as e:
+            # Skip competitions that can't be properly formatted
+            print(f"Warning: Could not format competition {c.id}: {e}")
+            continue
 
-    # For new users, both lists will be empty, which is correct
     return {
         "recent_sessions": sessions_data,
         "recent_competitions": [c.model_dump() if hasattr(c, "model_dump") else c.dict() for c in competitions_data],

@@ -150,14 +150,19 @@ class AICompetitionResponse(BaseModel):
     in_time: bool
     
 
-
 class Competition(BaseModel):
-    competition_id: str
-    schema_id: Optional[str] = None
-    difficulty: Optional[str] = None
-    time_limit: Optional[int] = None
-    started_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    id: str
+    user_id: str
+    difficulty: str
+    schema_ddl: str
+    questions: List[Any]
+    total_rounds: int
+    current_round: int
+    time_limit: int
+    ai_time_limit: int
+    started_at: datetime
+    expires_at: datetime
+    status: str
 
     class Config:
         from_attributes = True
@@ -176,7 +181,7 @@ class CompetitionStartResponse(BaseModel):
     competition_id: str
     difficulty: str
     schema_ddl: str
-    questions: List[str]  # ADD THIS - All 5 questions at start
+    questions: List[Dict[str, Any]]  # Expects strings, not dictionaries
     total_rounds: int
     current_round: int
     time_limit: int  # Total time for user (3 minutes = 180 seconds)
@@ -236,12 +241,12 @@ class AIIsCorrectRequest(BaseModel):
 
 class WinnerExplanationRequest(BaseModel):
     competition_id: str
+    round: int
     question: str
     human_explanation:str
     ai_explanation:str
     human_sql:str
     ai_sql:str
-    round: int
     human_iscorrect: bool
     ai_iscorrect:bool
 

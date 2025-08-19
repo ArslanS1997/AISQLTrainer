@@ -14,7 +14,7 @@ import os
 import random
 from models.database import Competition, CompetitionRound
 from models.schemas import (
-    CompetitionStartRequest, CompetitionStartResponse,
+    CompetitionStartRequest, CompetitionStartResponse,CompetitionQuestion,
     CompetitionResultResponse, CompetitionResultRequest,
     CompetitionHistoryResponse, AICompetitionRequest, AICompetitionResponse,isCorrectCompResponse, HumanIsCorrectRequest, AIIsCorrectRequest, WinnerExplanationRequest, WinnerExplanationResponse
 )
@@ -133,18 +133,31 @@ async def start_competition(
     competition_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
     expires_at = started_at + timedelta(seconds=180)  # 3 minutes total
-    
+    # Create a new DuckDB database for the competition, copying all tables from temp_conn
+    competition_db_path = f"{competition_id}.duckdb"
+    conn = duckdb.connect(database=competition_db_path)
+    for table in table_names:
+        # Copy each table from temp_conn to conn
+        df = temp_conn.execute(f"SELECT * FROM \"{table}\"").fetchdf()
+        conn.execute(f"CREATE TABLE \"{table}\" AS SELECT * FROM df")
+    conn.commit()
     # Create initial competition record using the new Competition model
     competition = Competition(
         id=competition_id,
         user_id=current_user.id,
         difficulty=request.difficulty,
         schema_ddl=schema_ddl,
-        questions=questions,
+        questions=[
+            {
+                "round": i+1,
+                "question": q,
+                "difficulty": request.difficulty
+            } for i, q in enumerate(questions)
+        ],  # Convert to dictionaries here too
         total_rounds=5,
         current_round=1,
-        time_limit=180,  # 3 minutes total
-        ai_time_limit=30,  # 30 seconds per question
+        time_limit=180,
+        ai_time_limit=30,
         started_at=started_at,
         expires_at=expires_at,
         status='active'
@@ -172,7 +185,13 @@ async def start_competition(
         competition_id=competition_id,
         difficulty=request.difficulty,
         schema_ddl=schema_ddl,
-        questions=questions,
+        questions=[
+            {
+                "round": i+1,
+                "question": q,
+                "difficulty": request.difficulty
+            } for i, q in enumerate(questions)
+        ],  # Convert to dictionaries
         total_rounds=5,
         current_round=1,
         time_limit=180,
@@ -183,7 +202,7 @@ async def start_competition(
     )
 
 
-@router.get("/round-result", response_model=WinnerExplanationResponse)
+@router.post("/round-result", response_model=WinnerExplanationResponse)
 async def get_competition_result(
     request: WinnerExplanationRequest,
     current_user: Any = Depends(get_current_user),
@@ -254,10 +273,11 @@ async def get_competition_result(
 async def check_human_response(
     request: HumanIsCorrectRequest,
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    conn = Depends(lambda request: get_competition_duckdb_conn(request.competition_id))
+    db: Session = Depends(get_db)
 ):
     """Check if human response is correct for a competition round."""
+    # Connect to the DuckDB database for this competition
+    conn = get_competition_duckdb_conn(request.competition_id)
     response_type = 'human'
     is_executable = False
     is_correct = False
@@ -341,10 +361,10 @@ async def check_human_response(
 async def check_ai_response(
     request: AIIsCorrectRequest,
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    conn = Depends(lambda request: get_competition_duckdb_conn(request.competition_id))
+    db: Session = Depends(get_db)
 ):
     """Check if AI response is correct for a competition round."""
+    conn = get_competition_duckdb_conn(request.competition_id)
     response_type = 'ai'
     is_executable = False
     is_correct = False
@@ -425,44 +445,78 @@ async def check_ai_response(
 
 
 @router.post("/ai-response", response_model=AICompetitionResponse)
-async def get_ai_response(
+async def generate_ai_response(
     request: AICompetitionRequest,
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    conn = Depends(lambda request: get_competition_duckdb_conn(request.competition_id))
+    db: Session = Depends(get_db)
 ):
-    """Get AI's competitive response to the same question."""
+    """Generate and store AI's competitive response."""
+    conn = get_competition_duckdb_conn(request.competition_id)
     
     # Verify competition exists
     competition = db.query(Competition).filter(
-        Competition.competition_id == request.competition_id,
+        Competition.id == request.competition_id,
         Competition.user_id == current_user.id
     ).first()
     
     if not competition:
         raise HTTPException(status_code=404, detail="Competition not found")
     
-    # Simulate AI generating SQL query within time limit
+    # Generate AI's competitive response
     start_time = time.time()
-    
-    # Generate AI's competitive response based on the question and schema
-    response = await ai_competitor_agent(question=request.question, schema=request.schema_ddl, difficulty=request.difficulty, conn=conn)
-    
+    response = await ai_competitor_agent(
+        question=request.question, 
+        schema=request.schema_ddl, 
+        difficulty=request.difficulty, 
+        conn=conn
+    )
     end_time = time.time()
-    time_taken_ms = int((end_time - start_time) * 1000)  # milliseconds
+    
+    time_taken_ms = int((end_time - start_time) * 1000)
     in_time = time_taken_ms <= (request.time_limit * 1000)
     
-    # Update the competition record with AI's response
-    competition.ai_queries = [response.sql]
-    competition.ai_score = DIFFICULTY_POINTS[request.difficulty] if in_time else 0
-    db.commit()
+    # Store AI response in CompetitionRound
+    round_record = db.query(CompetitionRound).filter(
+        CompetitionRound.competition_id == request.competition_id,
+        CompetitionRound.round_number == 1  # For now, assume round 1
+    ).first()
+    
+    if round_record:
+        round_record.ai_sql = response['sql']
+        round_record.ai_response_time = time_taken_ms
+        db.commit()
     
     return AICompetitionResponse(
         competition_id=request.competition_id,
-        answer=response.sql,
+        answer=response['sql'],
         difficulty=request.difficulty,
         in_time=in_time
     )
+
+
+@router.get("/ai-response/{competition_id}/{round}")
+async def get_stored_ai_response(
+    competition_id: str,
+    round: int,
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the stored AI response for a specific round."""
+    # Get the stored AI response from CompetitionRound
+    round_record = db.query(CompetitionRound).filter(
+        CompetitionRound.competition_id == competition_id,
+        CompetitionRound.round_number == round
+    ).first()
+    
+    if not round_record or not round_record.ai_sql:
+        raise HTTPException(status_code=404, detail="AI response not found for this round")
+    
+    return {
+        "competition_id": competition_id,
+        "round": round,
+        "ai_sql": round_record.ai_sql,
+        "ai_response_time": round_record.ai_response_time
+    }
 
 
 @router.post("/final-result", response_model=CompetitionResultResponse)

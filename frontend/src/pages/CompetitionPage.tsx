@@ -69,6 +69,7 @@ interface CompetitionState {
   can_get_certificate?: boolean;
   expires_at?: Date | null;
   aiResponses: { [key: number]: string }; // Add this for AI responses
+  aiCheckResults: { [key: number]: any }; // Add this for AI check results
 }
 
 const DIFFICULTY_OPTIONS = [
@@ -151,7 +152,8 @@ export const CompetitionPage: React.FC = () => {
     rounds_data: [],
     can_get_certificate: false,
     expires_at: null,
-    aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
+    aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' }, // Add this
+    aiCheckResults: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
   });
 
   // Timer countdown
@@ -184,6 +186,20 @@ export const CompetitionPage: React.FC = () => {
     console.log('Competition state updated:', competition);
   }, [competition]);
 
+  // Add this new function to get stored AI response
+  const getStoredAIResponse = async (round: number) => {
+    if (!competition.competitionId) return null;
+    
+    try {
+      const response = await apiClient.getStoredAIResponse(competition.competitionId, round);
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to get stored AI response for round ${round}:`, error);
+      return null;
+    }
+  };
+
+  // Add this function after the existing functions (around line 190, after getStoredAIResponse)
   const startCompetition = async () => {
     setIsLoading(true);
     
@@ -196,59 +212,100 @@ export const CompetitionPage: React.FC = () => {
         console.log('Full response data:', response.data);
         console.log('Questions received:', response.data.questions);
         
-        // For now, initialize AI responses as empty strings
-        // You'll need to implement AI response generation later
-        const aiResponses = {
-          1: '', 2: '', 3: '', 4: '', 5: ''
-        };
+        // Parse the schema and set parsedTables
+        if (response.data.schema_ddl) {
+          const tables = parseSchemaToTables(response.data.schema_ddl);
+          setParsedTables(tables);
+        }
         
-        setCompetition(prev => ({
-          ...prev,
-          competitionId: response.data!.competition_id,
-          difficulty: response.data!.difficulty,
-          schema_ddl: response.data!.schema_ddl,
-          questions: response.data!.questions || [],
-          total_rounds: response.data!.total_rounds || 5,
-          current_round: 1,
-          time_remaining: response.data!.time_limit || 180,
-          status: 'active',
-          current_question: response.data!.questions?.[0]?.question || 'No question available',
-          aiResponses: aiResponses
-        }));
+        setCompetition({
+          competitionId: response.data.competition_id,
+          difficulty: response.data.difficulty,
+          schema_ddl: response.data.schema_ddl,
+          questions: response.data.questions,
+          total_rounds: response.data.total_rounds,
+          current_round: response.data.current_round,
+          expires_at: new Date(response.data.expires_at), // Convert string to Date
+          status: 'active' as const, // Set to 'active' instead of using response.data.status
+          current_question: response.data.questions[0]?.question || '',
+          user_query: '',
+          time_remaining: response.data.time_limit, // Use time_limit to set time_remaining
+          user_score: 0,
+          ai_score: 0,
+          result: null, // Add the missing result property
+          rounds_data: [],
+          can_get_certificate: false,
+          aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' },
+          aiCheckResults: { 1: '', 2: '', 3: '', 4: '', 5: '' }
+        });
+        
+        // IMPORTANT: Send AI response request to backend for first round
+        console.log('Sending AI response request for round 1...');
+        const aiResponse = await apiClient.getAIResponse({
+          competition_id: response.data.competition_id,
+          question: response.data.questions[0]?.question || '',
+          schema_ddl: response.data.schema_ddl,
+          difficulty: response.data.difficulty,
+          time_limit: 30
+        });
+        
+        if (aiResponse.data) {
+          console.log('AI response received for round 1:', aiResponse.data);
+          // Store the AI response
+          setCompetition(prev => ({
+            ...prev,
+            aiResponses: {
+              ...prev.aiResponses,
+              1: aiResponse.data!.answer
+            }
+          }));
+        } else {
+          console.error('Failed to get AI response for round 1:', aiResponse.error);
+        }
       }
-    } catch (error: any) {
-      console.error('Failed to start competition:', error);
-      if (error.response?.status === 403) {
-        showUpgradeModal('competitions', subscription?.plan?.name || 'free');
-      }
+    } catch (error) {
+      console.error('Error starting competition:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getNextQuestion = async (competitionId: string, round: number) => {
+  // Update this function to actually send the request to the backend
+  const getAIResponseForRound = async (round: number) => {
+    if (!competition.competitionId) return;
+    
     try {
-      const questionIndex = round - 1;
-      if (questionIndex < competition.questions.length) {
-        const nextQuestion = competition.questions[questionIndex];
-        const questionText = typeof nextQuestion === 'string' 
-          ? nextQuestion 
-          : nextQuestion.question || '';
+      console.log(`Getting AI response for round ${round}`);
+      
+      // Send request to backend to generate AI response for this round
+      const aiResponse = await apiClient.getAIResponse({
+        competition_id: competition.competitionId,
+        question: competition.questions[round - 1]?.question || '',
+        schema_ddl: competition.schema_ddl,
+        difficulty: competition.difficulty,
+        time_limit: 30
+      });
+      
+      if (aiResponse.data) {
+        console.log(`AI response received for round ${round}:`, aiResponse.data);
         
+        // Store AI response for this round
         setCompetition(prev => ({
           ...prev,
-          current_round: round,
-          current_question: questionText,
-          user_query: ''
+          aiResponses: {
+            ...prev.aiResponses,
+            [round]: aiResponse.data!.answer
+          }
         }));
       } else {
-        await getCompetitionResult();
+        console.error(`Failed to get AI response for round ${round}:`, aiResponse.error);
       }
     } catch (error) {
-      console.error('Failed to get next question:', error);
+      console.error(`Error getting AI response for round ${round}:`, error);
     }
   };
 
+  // Update handleSubmitAnswer to use the new flow
   const handleSubmitAnswer = async (timeExpired: boolean = false) => {
     if (!competition.competitionId || !competition.user_query.trim()) {
       return;
@@ -257,7 +314,15 @@ export const CompetitionPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // 1. Check human response
+      // Step 1: Get stored AI response for this round
+      const storedAIResponse = await getStoredAIResponse(competition.current_round);
+      
+      if (!storedAIResponse) {
+        console.error('No stored AI response found for this round');
+        return;
+      }
+
+      // Step 4: Check human response
       const humanCheck = await apiClient.checkHumanResponse({
         competition_id: competition.competitionId!,
         question: competition.current_question,
@@ -268,48 +333,97 @@ export const CompetitionPage: React.FC = () => {
         response_time: 180 - competition.time_remaining
       });
 
-      // 2. For now, use placeholder AI response - you need to implement this
+      if (!humanCheck.data) {
+        console.error('Human check failed:', humanCheck.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 5: Check AI response using stored AI response
       const aiCheck = await apiClient.checkAIResponse({
         competition_id: competition.competitionId!,
         question: competition.current_question,
-        sql: "SELECT * FROM table", // Placeholder - replace with actual AI SQL
+        sql: storedAIResponse.ai_sql,
         difficulty: competition.difficulty,
         round: competition.current_round,
         time_limit: 30,
-        response_time: 30 // Placeholder - replace with actual AI response time
+        response_time: storedAIResponse.ai_response_time
       });
 
-      // 3. Get round result
+      if (!aiCheck.data) {
+        console.error('AI check failed:', aiCheck.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 6: Get round result - FIX THIS CALL
       const roundResult = await apiClient.getRoundResult({
         competition_id: competition.competitionId!,
-        round: competition.current_round
+        round: competition.current_round,
+        question: competition.current_question,
+        human_explanation: humanCheck.data.explanation,
+        ai_explanation: aiCheck.data.explanation,
+        human_sql: competition.user_query,
+        ai_sql: storedAIResponse.ai_sql,
+        human_iscorrect: humanCheck.data.is_correct,
+        ai_iscorrect: aiCheck.data.is_correct
       });
 
-      // 4. Check if this was the last round
-      if (competition.current_round === 5) {
-        // Competition is complete - get final result
-        const finalResult = await apiClient.getCompetitionResult({
-          competition_id: competition.competitionId!
-        });
-        
-        setCompetition(prev => ({
-          ...prev,
-          status: 'completed',
-          result: finalResult.data?.final_result || null // Fix the type issue
-        }));
-        
-        setShowResults(true)
-      } else {
-        // Move to next round
+      if (!roundResult.data) {
+        console.error('Round result failed:', roundResult.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Store the data in variables to avoid TypeScript errors
+      const humanData = humanCheck.data;
+      const aiData = aiCheck.data;
+      const roundData = roundResult.data;
+
+      // Update competition state with results
+      setCompetition(prev => ({
+        ...prev,
+        rounds_data: [
+          ...prev.rounds_data,
+          {
+            round: competition.current_round,
+            question: competition.current_question,
+            user_query: competition.user_query,
+            ai_query: storedAIResponse.ai_sql,
+            user_correct: humanData.is_correct,
+            ai_correct: aiData.is_correct,
+            user_time: 180 - competition.time_remaining,
+            ai_time: storedAIResponse.ai_response_time,
+            explanation: roundData.explanation,
+            correct_answer: ''
+          }
+        ],
+        user_score: prev.user_score + (humanData.is_correct ? 1 : 0),
+        ai_score: prev.ai_score + (aiData.is_correct ? 1 : 0)
+      }));
+
+      // Move to next round or end competition
+      if (competition.current_round < 5) {
         setCompetition(prev => ({
           ...prev,
           current_round: prev.current_round + 1,
-          user_query: ''
+          current_question: competition.questions[competition.current_round]?.question || '',
+          user_query: '',
+          time_remaining: 180
+        }));
+        
+        // Get AI response for next round
+        // getAIResponseForRound(competition.current_round + 1); // This function is not defined
+      } else {
+        // Competition completed
+        setCompetition(prev => ({
+          ...prev,
+          status: 'completed'
         }));
       }
 
     } catch (error) {
-      console.error('Failed to submit answer:', error);
+      console.error('Error submitting answer:', error);
     } finally {
       setIsLoading(false);
     }
@@ -358,7 +472,8 @@ export const CompetitionPage: React.FC = () => {
       rounds_data: [],
       can_get_certificate: false,
       expires_at: null,
-      aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
+      aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' }, // Add this
+      aiCheckResults: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
     });
     setShowResults(false);
     setShowExplanation(false);
