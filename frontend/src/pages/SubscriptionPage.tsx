@@ -12,6 +12,7 @@ export const SubscriptionPage: React.FC = () => {
   const { subscription, loading, error, refetchSubscription } = useSubscription();
   const currentPlan = subscription?.plan?.name || 'free';
   const [canceling, setCanceling] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
   const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
   const [selectedTargetPlan, setSelectedTargetPlan] = useState('');
 
@@ -84,6 +85,29 @@ export const SubscriptionPage: React.FC = () => {
       alert('Failed to cancel subscription. Please try again.');
     } finally {
       setCanceling(false);
+    }
+  };
+
+  const handleReactivateSubscription = async () => {
+    if (!window.confirm('Are you sure you want to reactivate your subscription? Your subscription will continue as normal.')) {
+      return;
+    }
+
+    setReactivating(true);
+    try {
+      const response = await apiClient.reactivateSubscription();
+      if (response.data?.success) {
+        alert(response.data.message);
+        // Refresh subscription data
+        await refetchSubscription();
+      } else {
+        alert('Failed to reactivate subscription');
+      }
+    } catch (error) {
+      console.error('Reactivate subscription error:', error);
+      alert('Failed to reactivate subscription. Please try again.');
+    } finally {
+      setReactivating(false);
     }
   };
 
@@ -315,6 +339,55 @@ export const SubscriptionPage: React.FC = () => {
               </Button>
             </div>
           </div>
+
+          {/* Cancellation Status - Show when subscription is set to cancel */}
+          {subscription?.cancel_at_period_end && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <svg className="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-medium text-yellow-800">
+                    Subscription Cancellation Scheduled
+                  </h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <p>
+                      Your subscription will be canceled at the end of your current billing period.
+                      {subscription.current_period_end && (
+                        <span className="block mt-1 font-medium">
+                          End date: {new Date(subscription.current_period_end).toLocaleDateString()}
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-2">
+                      You'll continue to have access to all premium features until then.
+                    </p>
+                  </div>
+                  <div className="mt-4 flex gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleReactivateSubscription}
+                      disabled={reactivating}
+                      className="text-yellow-800 border-yellow-800 hover:bg-yellow-100"
+                    >
+                      {reactivating ? 'Reactivating...' : 'Reactivate Subscription'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.location.href = '/pricing'}
+                    >
+                      View Plans
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
