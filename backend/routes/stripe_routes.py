@@ -1234,15 +1234,39 @@ async def verify_checkout_session(session_id: str):
             if subscription_id:
                 try:
                     subscription = stripe.Subscription.retrieve(subscription_id)
+                    
+                    # Safely get the plan from subscription items
+                    plan_name = None
+                    if hasattr(subscription, 'items') and subscription.items:
+                        # Get the first item's price lookup key
+                        if hasattr(subscription.items, 'data') and subscription.items.data:
+                            first_item = subscription.items.data[0]
+                            if hasattr(first_item, 'price') and first_item.price:
+                                plan_name = getattr(first_item.price, 'lookup_key', None)
+                    
+                    # Fallback: try to get plan from metadata or other sources
+                    if not plan_name:
+                        # Check if we have metadata with plan info
+                        if hasattr(checkout_session, 'metadata') and checkout_session.metadata:
+                            plan_name = checkout_session.metadata.get('plan')
+                    
                     subscription_details = {
                         "id": subscription.id,
                         "status": subscription.status,
-                        "plan": subscription.items.data[0].price.lookup_key if subscription.items.data else None,
+                        "plan": plan_name,
                         "current_period_end": subscription.current_period_end,
                         "cancel_at_period_end": subscription.cancel_at_period_end
                     }
                 except Exception as e:
                     print(f"Warning: Could not retrieve subscription {subscription_id}: {e}")
+                    # Try to get basic info from checkout session metadata
+                    subscription_details = {
+                        "id": subscription_id,
+                        "status": "unknown",
+                        "plan": checkout_session.metadata.get('plan') if checkout_session.metadata else None,
+                        "current_period_end": None,
+                        "cancel_at_period_end": False
+                    }
             
             return {
                 "success": True,
