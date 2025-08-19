@@ -18,7 +18,7 @@ from models.schemas import (
     CompetitionResultResponse, CompetitionResultRequest,
     CompetitionHistoryResponse, AICompetitionRequest, AICompetitionResponse,isCorrectCompResponse, HumanIsCorrectRequest, AIIsCorrectRequest, WinnerExplanationRequest, WinnerExplanationResponse
 )
-from routes.auth import get_current_user, get_db, get_model_for_user
+from routes.auth import get_current_user, get_db, get_model_for_user, default_lm
 from utils.subscription_service import SubscriptionService
 from utils.agents import ai_competitor_agent
 import threading 
@@ -67,9 +67,7 @@ def get_competition_duckdb_conn(competition_id:str):
 async def start_competition(
     request: CompetitionStartRequest,
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
-
+    db: Session = Depends(get_db)
 ):
     """Start a new User vs AI competition."""
     if not current_user:
@@ -118,9 +116,12 @@ async def start_competition(
 
 
     # Generate questions using the AI agent
-    with dspy.context(lm = lm):
+    with dspy.context(lm = default_lm):
         questions = await competition_question_gen_agent(schema=schema_ddl, difficulty=request.difficulty)
+        
     questions = questions.questions
+    if not questions:
+        raise HTTPException(status_code=500, detail="No questions generated for this competition.")
     
     # Check subscription limits
     subscription_service = SubscriptionService(db)
@@ -134,12 +135,14 @@ async def start_competition(
     started_at = datetime.utcnow()
     expires_at = started_at + timedelta(seconds=180)  # 3 minutes total
     # Create a new DuckDB database for the competition, copying all tables from temp_conn
-    competition_db_path = f"{competition_id}.duckdb"
+    competition_db_path = f"db_{competition_id}.duckdb"
     conn = duckdb.connect(database=competition_db_path)
     for table in table_names:
         # Copy each table from temp_conn to conn
         df = temp_conn.execute(f"SELECT * FROM \"{table}\"").fetchdf()
         conn.execute(f"CREATE TABLE \"{table}\" AS SELECT * FROM df")
+
+
     conn.commit()
     # Create initial competition record using the new Competition model
     competition = Competition(
@@ -278,6 +281,13 @@ async def check_human_response(
     """Check if human response is correct for a competition round."""
     # Connect to the DuckDB database for this competition
     conn = get_competition_duckdb_conn(request.competition_id)
+    # Check if tables are loaded in the DuckDB connection
+    try:
+        loaded_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+        if not loaded_tables:
+            raise HTTPException(status_code=500, detail="No tables loaded in the competition database.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking tables in competition database: {str(e)}")
     response_type = 'human'
     is_executable = False
     is_correct = False
@@ -365,6 +375,12 @@ async def check_ai_response(
 ):
     """Check if AI response is correct for a competition round."""
     conn = get_competition_duckdb_conn(request.competition_id)
+    try:
+        loaded_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+        if not loaded_tables:
+            raise HTTPException(status_code=500, detail="No tables loaded in the competition database.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking tables in competition database: {str(e)}")
     response_type = 'ai'
     is_executable = False
     is_correct = False
@@ -375,21 +391,28 @@ async def check_ai_response(
     round_num = request.round
     difficulty_multiplier = {'basic': 1, "intermediate": 2, "advanced": 4}
 
+    # Get the stored AI SQL from the database
+    round_record = db.query(CompetitionRound).filter(
+        CompetitionRound.competition_id == request.competition_id,
+        CompetitionRound.round_number == round_num
+    ).first()
+    
+    if not round_record or not round_record.ai_sql:
+        raise HTTPException(status_code=404, detail="AI response not found for this round")
+    
+    ai_sql = round_record.ai_sql  # Use stored SQL from DB
+
     with dspy.context(lm=dspy.LM('openai/gpt-4o-mini'), max_tokens=5000):
         try:
-            result = conn.execute(request.sql).fetchdf().head().to_markdown(index=False)
+            result = conn.execute(ai_sql).fetchdf().head().to_markdown(index=False)
             is_executable = True
         except Exception as e:
-            explanation = await explanation_gen_agent(error_generated=str(e)[:400], faulty_sql=request.sql)
+            explanation = await explanation_gen_agent(error_generated=str(e)[:400], faulty_sql=ai_sql)
             explanation = explanation.explanation
             
             # Update the round record with error information
-            round_record = db.query(CompetitionRound).filter(
-                CompetitionRound.competition_id == request.competition_id,
-                CompetitionRound.round_number == round_num
-            ).first()
             if round_record:
-                round_record.ai_sql = request.sql
+                round_record.ai_sql = ai_sql
                 round_record.ai_correct = False
                 round_record.explanation = explanation
                 round_record.ai_response_time = request.response_time
@@ -400,31 +423,27 @@ async def check_ai_response(
                 response_type=response_type,
                 is_executable=is_executable,
                 is_correct=is_correct,
-                in_time=in_time,
                 round=round_num,
                 points=points,
                 result=result,
-                explanation=explanation
+                explanation=explanation,
+                ai_sql=ai_sql  # Return the AI SQL
             )
         
         if is_executable:
-            response = await check_correct_agent(question=request.question, sql=request.sql, table_head=result)
+            response = await check_correct_agent(question=request.question, sql=ai_sql, table_head=result)
             is_correct = response.is_correct
             if is_correct:
                 explanation = response.explanation
             else:
-                explanation = await explanation_gen_agent(error_generated=response.explanation, faulty_sql=request.sql)
+                explanation = await explanation_gen_agent(error_generated=response.explanation, faulty_sql=ai_sql)
                 explanation = explanation.explanation
 
             points = difficulty_multiplier.get(request.difficulty.lower(), 1)
             
             # Update the round record with results
-            round_record = db.query(CompetitionRound).filter(
-                CompetitionRound.competition_id == request.competition_id,
-                CompetitionRound.round_number == round_num
-            ).first()
             if round_record:
-                round_record.ai_sql = request.sql
+                round_record.ai_sql = ai_sql
                 round_record.ai_correct = is_correct
                 round_record.ai_points = points if is_correct else 0
                 round_record.explanation = explanation
@@ -436,11 +455,11 @@ async def check_ai_response(
                 response_type=response_type,
                 is_executable=is_executable,
                 is_correct=is_correct,
-                in_time=in_time,
                 round=round_num,
                 points=points,
                 result=result,
-                explanation=explanation
+                explanation=explanation,
+                ai_sql=ai_sql  # Return the AI SQL
             )
 
 

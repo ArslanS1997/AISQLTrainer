@@ -542,7 +542,7 @@ class sql_generator(dspy.Signature):
     )
 
     Expected SQL:
-    SELECT products.name, SUM(products.price * order_items.quantity) AS total_revenue
+    SELECT name, SUM(price * quantity) AS total_revenue
     FROM order_items
     JOIN products ON order_items.product_id = products.id
     JOIN orders ON order_items.order_id = orders.id
@@ -550,6 +550,8 @@ class sql_generator(dspy.Signature):
     GROUP BY products.name
     ORDER BY total_revenue DESC
     LIMIT 5;
+
+    You should use DuckDB syntax!
     """
 
     question = dspy.InputField(desc="The user's natural language question about the database.")
@@ -630,7 +632,7 @@ class text2sqlagent(dspy.Module):
         self.sql_genator_agent = dspy.Predict(sql_generator)
         self.sql_corrector = dspy.Predict(sql_corrector)
         self.basic_lm = dspy.LM(model='openai/gpt-4o-mini', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=5000)
-        self.intermediate_lm = dspy.LM('anthropic/claude-3.5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
+        self.intermediate_lm = dspy.LM('anthropic/claude-3-5-sonnet',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
         self.advanced_lm = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
         self.llm_dictionary = {'basic':self.basic_lm, 'intermediate':self.intermediate_lm, 'advanced':self.advanced_lm}
 

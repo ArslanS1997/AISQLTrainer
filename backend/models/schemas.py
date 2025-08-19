@@ -198,6 +198,7 @@ class CompetitionSubmitRequest(BaseModel):
     user_query: str
 
 class isCorrectCompResponse(BaseModel):
+    competition_id: str
     response_type: str
     is_executable: bool
     is_correct: bool
@@ -205,7 +206,8 @@ class isCorrectCompResponse(BaseModel):
     round: int
     points: int
     result: str
-    explanation:str 
+    explanation: str
+    ai_sql: str = ""  # Add this field for AI responses
 
 class HumanIsCorrectRequest(BaseModel):
     competition_id: str
