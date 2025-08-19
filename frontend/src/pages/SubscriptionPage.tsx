@@ -5,12 +5,14 @@ import { Button } from '../components/Button';
 import { CheckCircle, CreditCard, Database, Trophy, BarChart3, Lock } from 'lucide-react';
 import { UserSubscription, SubscriptionPlan } from '../types';
 import { useSubscription } from '../contexts/SubscriptionContext';
+import { PlanChangeModal } from '../components/PlanChangeModal'; // Add this import
 
 export const SubscriptionPage: React.FC = () => {
   const { user } = useAuth();
   const { subscription, loading, error, refetchSubscription } = useSubscription();
   const currentPlan = subscription?.plan?.name || 'free';
   const [canceling, setCanceling] = useState(false);
+  const [showPlanChangeModal, setShowPlanChangeModal] = useState(false); // Add this state
 
   const getPlanDisplayName = (planObj?: SubscriptionPlan | string) => {
     let planName: string;
@@ -81,6 +83,16 @@ export const SubscriptionPage: React.FC = () => {
       alert('Failed to cancel subscription. Please try again.');
     } finally {
       setCanceling(false);
+    }
+  };
+
+  const handleChangePlan = () => {
+    if (currentPlan === 'free') {
+      // Free users go to pricing page
+      window.location.href = '/pricing';
+    } else {
+      // Existing subscribers open plan change modal
+      setShowPlanChangeModal(true);
     }
   };
 
@@ -278,7 +290,7 @@ export const SubscriptionPage: React.FC = () => {
                 <>
                   <Button 
                     variant="outline"
-                    onClick={() => window.location.href = '/pricing'}
+                    onClick={handleChangePlan}
                   >
                     Change Plan
                   </Button>
@@ -303,6 +315,20 @@ export const SubscriptionPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Add Plan Change Modal */}
+      {showPlanChangeModal && (
+        <PlanChangeModal
+          isOpen={showPlanChangeModal}
+          onClose={() => setShowPlanChangeModal(false)}
+          targetPlan=""
+          billingCycle="monthly"
+          onPlanChanged={async () => {
+            await refetchSubscription();
+            setShowPlanChangeModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };
