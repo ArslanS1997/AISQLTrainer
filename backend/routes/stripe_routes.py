@@ -198,18 +198,25 @@ async def get_user_subscription(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        # Get user's subscription
+        # Get the MOST RECENT ACTIVE subscription for the user
         subscription = db.query(Subscription).filter(
-            Subscription.user_id == current_user.id
-        ).first()
+            Subscription.user_id == current_user.id,
+            Subscription.status == 'active'  # Only get active subscriptions
+        ).order_by(Subscription.updated_at.desc()).first()  # Get most recently updated
         
-        # Get user's plan details
+        # If no active subscription, check for any subscription and get the latest
+        if not subscription:
+            subscription = db.query(Subscription).filter(
+                Subscription.user_id == current_user.id
+            ).order_by(Subscription.updated_at.desc()).first()
+        
+        # Get user's plan details - ALWAYS fetch fresh from database
         plan_name = subscription.plan if subscription else 'free'
         plan = db.query(SubscriptionPlan).filter(
             SubscriptionPlan.name == plan_name
         ).first()
         
-        # Get current month's usage
+        # Get current month's usage - ALWAYS fetch fresh and create if missing
         current_date = datetime.utcnow()
         usage = db.query(UserUsage).filter(
             UserUsage.user_id == current_user.id,
@@ -217,16 +224,39 @@ async def get_user_subscription(
             UserUsage.month == current_date.month
         ).first()
         
+        # If no usage record exists, create one with current data
         if not usage:
-            usage = UserUsage(
-                user_id=current_user.id,
-                year=current_date.year,
-                month=current_date.month,
-                schemas_generated=0,
-                competitions_entered=0
-            )
+            # Check if there are any usage records for this user
+            existing_usage = db.query(UserUsage).filter(
+                UserUsage.user_id == current_user.id
+            ).order_by(UserUsage.updated_at.desc()).first()
+            
+            if existing_usage:
+                # Copy the last known usage as starting point
+                usage = UserUsage(
+                    user_id=current_user.id,
+                    year=current_date.year,
+                    month=current_date.month,
+                    schemas_generated=existing_usage.schemas_generated,
+                    competitions_entered=existing_usage.competitions_entered
+                )
+            else:
+                # Create fresh usage record
+                usage = UserUsage(
+                    user_id=current_user.id,
+                    year=current_date.year,
+                    month=current_date.month,
+                    schemas_generated=0,
+                    competitions_entered=0
+                )
+            
+            # Save the new usage record
+            db.add(usage)
+            db.commit()
+            db.refresh(usage)
+            print(f"✅ Created new usage record for user {current_user.id}")
         
-        # Build response with only existing attributes
+        # Build response with fresh data
         subscription_data = {
             'plan': {
                 'name': plan.name if plan else 'free',
@@ -254,57 +284,22 @@ async def get_user_subscription(
                 'stripe_subscription_id': subscription.stripe_subscription_id,
                 'status': subscription.status,
                 'cancel_at_period_end': subscription.cancel_at_period_end,
-                'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None
-                # Removed stripe_price_id and billing_cycle as they don't exist
+                'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+                'plan_name': subscription.plan,  # Add the actual plan from subscription
+                'updated_at': subscription.updated_at.isoformat() if subscription.updated_at else None
             })
+        
+        print(f"✅ Fetched fresh subscription data for user {current_user.id}")
+        print(f" Plan: {subscription_data['plan']['name']}")
+        print(f" Usage: {subscription_data['usage']}")
         
         return subscription_data
         
     except Exception as e:
-        # Return default data on error instead of raising exception
-        # print(f"Error fetching subscription: {e}")
-        # return {
-        #     'plan': {
-        #         'name': 'free',
-        #         'display_name': 'Free Plan',
-        #         'limits': {
-        #             'max_schemas_per_month': 5,
-        #             'max_competitions_per_month': 3
-        #         },
-        #         'features': {
-        #             'can_download_certificates': False,
-        #             'can_get_master_certificate': False,
-        #             'ai_model_tier': 'gpt-4o-mini'
-        #         },
-        #         'selected_model_index': 0
-        #     },
-        #     'usage': {
-        #         'schemas_generated': 0,
-        #         'competitions_entered': 0
-        #     }
-        # }
-        # print(f"Error fetching subscription: {e}")
-        # return {
-        #     'plan': {
-        #         'name': 'free',
-        #         'display_name': 'Free Plan',
-        #         'limits': {
-        #             'max_schemas_per_month': 5,
-        #             'max_competitions_per_month': 3
-        #         },
-        #         'features': {
-        #             'can_download_certificates': False,
-        #             'can_get_master_certificate': False,
-        #             'ai_model_tier': 'gpt-4o-mini'
-        #         },
-        #         'selected_model_index': 0
-        #     },
-        #     'usage': {
-        #         'schemas_generated': 0,
-        #         'competitions_entered': 0
-        #     }
-        # }
-        raise HTTPException(status_code=500, detail=f"Error fetching subscription: {e}")
+        print(f"❌ Error fetching subscription: {e}")
+        print(f"📋 Full traceback: {traceback.format_exc()}")
+        # Raise exception instead of returning fallback data
+        raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
 
 
 @router.get("/feature-check/{feature}")
