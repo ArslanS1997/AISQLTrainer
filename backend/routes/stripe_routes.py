@@ -259,7 +259,7 @@ async def get_user_subscription(
             db.refresh(usage)
             print(f"✅ Created new usage record for user {current_user.id}")
         
-        # Build response using the SAME logic as SubscriptionService
+        # Build response using the SAME logic as SubscriptionServiceadd
         subscription_data = {
             'plan': {
                 'name': plan_name,  # Use the plan from subscription
