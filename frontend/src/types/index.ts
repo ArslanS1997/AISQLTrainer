@@ -190,11 +190,18 @@ export interface SubscriptionPlan {
 }
 
 export interface UserSubscription {
-  plan: SubscriptionPlan;  // Changed from string to SubscriptionPlan
+  plan: SubscriptionPlan;
   usage: {
     schemas_generated: number;
     competitions_entered: number;
   };
+  // Add subscription management fields
+  stripe_subscription_id?: string;
+  status?: string;
+  cancel_at_period_end?: boolean;
+  current_period_end?: string;
+  stripe_price_id?: string;
+  billing_cycle?: string;
 }
 
 // Add shared types

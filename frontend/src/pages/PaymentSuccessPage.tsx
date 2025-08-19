@@ -1,59 +1,80 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useSubscription } from '../contexts/SubscriptionContext';
-import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
-import { CheckCircle, ArrowRight, Trophy, Zap, X } from 'lucide-react';
+import { CheckCircle, ArrowRight, Trophy, Zap, X, AlertCircle } from 'lucide-react';
+
+interface CheckoutSessionData {
+  session_id: string;
+  payment_status: string;
+  status: string;
+  amount_total: number;
+  currency: string;
+  customer_email: string;
+  subscription: {
+    id: string;
+    status: string;
+    plan: string;
+    current_period_end: number;
+    cancel_at_period_end: boolean;
+  };
+  metadata: any;
+}
 
 const PaymentSuccessPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { refreshSubscription } = useSubscription();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
+  const [sessionData, setSessionData] = useState<CheckoutSessionData | null>(null);
 
   const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
-    const handlePaymentSuccess = async () => {
+    const verifyPayment = async () => {
       if (!sessionId) {
-        setError('No session ID found');
+        setError('No session ID found in URL');
         setLoading(false);
         return;
       }
 
       try {
-        // Refresh subscription status
-        if (refreshSubscription) {
-          await refreshSubscription();
+        console.log('🔍 Verifying payment for session:', sessionId);
+        
+        // Import apiClient dynamically to avoid circular dependencies
+        const { apiClient } = await import('../utils/api');
+        const response = await apiClient.verifyCheckoutSession(sessionId);
+        
+        console.log('📊 Verification response:', response);
+        
+        if (response.data && response.data.success) {
+          setSessionData(response.data);
+          console.log('✅ Payment verified successfully');
+        } else {
+          const errorMsg = response.error || response.data?.error || 'Payment verification failed';
+          setError(errorMsg);
+          console.error('❌ Payment verification failed:', errorMsg);
         }
-
-        // Get subscription details
-        const response = await apiClient.getSubscriptionStatus();
-        if (response.data) {
-          setSubscriptionDetails(response.data);
-        }
-
+        
         setLoading(false);
       } catch (err) {
-        console.error('Error handling payment success:', err);
-        setError('Failed to process payment success');
+        console.error('❌ Error verifying payment:', err);
+        setError('Failed to verify payment. Please contact support.');
         setLoading(false);
       }
     };
 
-    handlePaymentSuccess();
-  }, [sessionId, refreshSubscription]);
+    verifyPayment();
+  }, [sessionId]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Processing your payment...</p>
+          <p className="text-gray-600">Verifying your payment...</p>
+          <p className="text-sm text-gray-500 mt-2">Session ID: {sessionId}</p>
         </div>
       </div>
     );
@@ -64,17 +85,58 @@ const PaymentSuccessPage: React.FC = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-500 mb-4">
+            <AlertCircle className="h-16 w-16 mx-auto" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Payment Verification Failed</h1>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="space-y-3">
+            <Button onClick={() => navigate('/subscription')}>
+              Try Again
+            </Button>
+            <Button 
+              onClick={() => navigate('/main')} 
+              variant="outline"
+            >
+              Go to Dashboard
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sessionData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 mb-4">
             <X className="h-16 w-16 mx-auto" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Payment Error</h1>
-          <p className="text-gray-600 mb-6">{error}</p>
-          <Button onClick={() => navigate('/main')}>
-            Go to Dashboard
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">No Payment Data</h1>
+          <p className="text-gray-600 mb-6">Unable to retrieve payment information</p>
+          <Button onClick={() => navigate('/subscription')}>
+            Go to Subscription
           </Button>
         </div>
       </div>
     );
   }
+
+  // Determine plan name from subscription data
+  const getPlanName = () => {
+    if (sessionData.subscription?.plan) {
+      return sessionData.subscription.plan.charAt(0).toUpperCase() + sessionData.subscription.plan.slice(1);
+    }
+    return 'Premium';
+  };
+
+  const getAmountDisplay = () => {
+    if (sessionData.amount_total) {
+      const amount = sessionData.amount_total / 100; // Convert from cents
+      return `${amount} ${sessionData.currency.toUpperCase()}`;
+    }
+    return 'N/A';
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -88,8 +150,50 @@ const PaymentSuccessPage: React.FC = () => {
             Payment Successful! 🎉
           </h1>
           <p className="text-xl text-gray-600">
-            Welcome to {subscriptionDetails?.plan === 'pro' ? 'Pro' : 'Max'} Plan
+            Welcome to {getPlanName()} Plan
           </p>
+          <p className="text-lg text-gray-500 mt-2">
+            Amount: {getAmountDisplay()}
+          </p>
+        </div>
+
+        {/* Payment Details */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 mb-8">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-6 text-center">
+            Payment Confirmation
+          </h2>
+          
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <span className="text-sm font-medium text-gray-500">Session ID:</span>
+                <p className="text-sm text-gray-900 font-mono">{sessionData.session_id}</p>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-500">Status:</span>
+                <p className="text-sm text-gray-900 capitalize">{sessionData.status}</p>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-500">Payment Status:</span>
+                <p className="text-sm text-gray-900 capitalize">{sessionData.payment_status}</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <span className="text-sm font-medium text-gray-500">Amount:</span>
+                <p className="text-sm text-gray-900">{getAmountDisplay()}</p>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-500">Plan:</span>
+                <p className="text-sm text-gray-900">{getPlanName()}</p>
+              </div>
+              <div>
+                <span className="text-sm font-medium text-gray-500">Customer Email:</span>
+                <p className="text-sm text-gray-900">{sessionData.customer_email || 'N/A'}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* What You Get */}
@@ -144,7 +248,7 @@ const PaymentSuccessPage: React.FC = () => {
           
           <div>
             <Button 
-              onClick={() => navigate('/certificates')}
+              onClick={() => navigate('/certificate')}
               variant="outline"
               className="px-8 py-3"
             >
@@ -153,12 +257,12 @@ const PaymentSuccessPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Session Info for Debugging */}
-        {sessionId && (
-          <div className="mt-12 text-center text-sm text-gray-500">
-            <p>Session ID: {sessionId}</p>
-          </div>
-        )}
+        {/* Debug Info */}
+        <div className="mt-12 text-center text-sm text-gray-500">
+          <p>Session ID: {sessionId}</p>
+          <p>Payment Status: {sessionData.payment_status}</p>
+          <p>Session Status: {sessionData.status}</p>
+        </div>
       </div>
     </div>
   );

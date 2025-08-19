@@ -471,6 +471,13 @@ class APIClient {
     return this.request('/api/achievements/certificates');
   }
 
+  // Add this method to fetch competition certificates
+  async getUserCompetitionCertificates(): Promise<{ data?: any; error?: string }> {
+    return this.request('/api/achievements/competition-certificates', {
+      method: 'GET'
+    });
+  }
+
 
   // Stripe API methods
   async createCheckoutSession(plan: string, billingCycle: string, promoCode?: string): Promise<{ data?: any; error?: string }> {
@@ -655,6 +662,11 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // Add this method to verify checkout sessions
+  async verifyCheckoutSession(sessionId: string): Promise<{ data?: any; error?: string }> {
+    return this.request(`/api/stripe/verify-checkout-session/${sessionId}`);
   }
 }
 

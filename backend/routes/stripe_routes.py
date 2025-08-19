@@ -199,16 +199,35 @@ async def get_user_subscription(
         service = SubscriptionService(db)
         plan = service.get_user_plan(current_user.id)
         usage = service.get_user_usage(current_user.id)
-        return {
+        
+        # Get subscription details from database
+        subscription = db.query(Subscription).filter(
+            Subscription.user_id == current_user.id
+        ).first()
+        
+        subscription_data = {
             'plan': plan,
             'usage': usage
         }
+        
+        # Add subscription details if they exist
+        if subscription:
+            subscription_data.update({
+                'stripe_subscription_id': subscription.stripe_subscription_id,
+                'status': subscription.status,
+                'cancel_at_period_end': subscription.cancel_at_period_end,
+                'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+                'stripe_price_id': subscription.stripe_price_id,
+                'billing_cycle': subscription.billing_cycle
+            })
+        
+        return subscription_data
+        
     except Exception as e:
         usage = {
             'schemas_generated': 0,
             'competitions_entered': 0
         }
-        # return {'plan':os.environ('SET_MY_DEFAULT_PLAN'), 'usage':usage}
         raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
 
 @router.get("/feature-check/{feature}")
@@ -1144,5 +1163,64 @@ async def get_subscription_status(
     except Exception as e:
         print(f"❌ Error getting subscription status: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get subscription status: {str(e)}")
+
+@router.get("/verify-checkout-session/{session_id}")
+async def verify_checkout_session(session_id: str):
+    """Verify a Stripe checkout session by ID and return payment details."""
+    try:
+        # Retrieve the checkout session from Stripe
+        checkout_session = stripe.checkout.Session.retrieve(session_id)
+        
+        # Check if the session is completed and paid
+        if checkout_session.payment_status == 'paid' and checkout_session.status == 'complete':
+            # Get subscription details if available
+            subscription_id = checkout_session.subscription
+            subscription_details = None
+            
+            if subscription_id:
+                try:
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                    subscription_details = {
+                        "id": subscription.id,
+                        "status": subscription.status,
+                        "plan": subscription.items.data[0].price.lookup_key if subscription.items.data else None,
+                        "current_period_end": subscription.current_period_end,
+                        "cancel_at_period_end": subscription.cancel_at_period_end
+                    }
+                except Exception as e:
+                    print(f"Warning: Could not retrieve subscription {subscription_id}: {e}")
+            
+            return {
+                "success": True,
+                "session_id": session_id,
+                "payment_status": checkout_session.payment_status,
+                "status": checkout_session.status,
+                "amount_total": checkout_session.amount_total,
+                "currency": checkout_session.currency,
+                "customer_email": checkout_session.customer_details.email if checkout_session.customer_details else None,
+                "subscription": subscription_details,
+                "metadata": checkout_session.metadata
+            }
+        else:
+            return {
+                "success": False,
+                "session_id": session_id,
+                "payment_status": checkout_session.payment_status,
+                "status": checkout_session.status,
+                "error": "Payment not completed"
+            }
+            
+    except stripe.error.InvalidRequestError:
+        return {
+            "success": False,
+            "session_id": session_id,
+            "error": "Invalid session ID"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "session_id": session_id,
+            "error": f"Failed to verify session: {str(e)}"
+        }
 
 

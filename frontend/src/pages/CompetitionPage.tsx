@@ -29,6 +29,7 @@ import { UpgradeModal } from '../components/UpgradeModal';
 import { apiClient } from '../utils/api';
 import { SchemaCard } from '../components/SchemaCard';
 import { TableData, TableColumn } from '../types';
+import { Certificate } from '../components/certificate';
 
 interface CompetitionRound {
   round: number;
@@ -649,24 +650,9 @@ export const CompetitionPage: React.FC = () => {
       if (certificateResponse.data) {
         console.log('Certificate generated successfully:', certificateResponse.data);
         
-        // If the certificate has a download URL, open it
-        if (certificateResponse.data.download_url) {
-          window.open(certificateResponse.data.download_url, '_blank');
-        } else if (certificateResponse.data.certificate_data) {
-          // If we have certificate data, trigger download
-          const blob = new Blob([certificateResponse.data.certificate_data], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `SQL_Competition_Certificate_${competition.competitionId}.pdf`;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
-        }
-        
-        // Show success message
-        alert('Certificate generated successfully!');
+        // Store certificate data in state to display the certificate
+        setCertificateData(certificateResponse.data.certificate_data);
+        setShowCertificate(true);
         
       } else {
         console.error('Failed to generate certificate:', certificateResponse.error);
@@ -678,6 +664,10 @@ export const CompetitionPage: React.FC = () => {
       alert('Error generating certificate. Please try again.');
     }
   };
+
+  // Add state for certificate display
+  const [certificateData, setCertificateData] = useState<any>(null);
+  const [showCertificate, setShowCertificate] = useState(false);
 
   if (showResults) {
     return (
@@ -735,6 +725,29 @@ export const CompetitionPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Certificate Display */}
+        {showCertificate && certificateData && (
+          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-4">Your Competition Certificate</h2>
+            <Certificate
+              type="competition"
+              competition={{
+                name: `SQL Competition - ${competition.difficulty.charAt(0).toUpperCase() + competition.difficulty.slice(1)}`,
+                date: new Date().toLocaleDateString(),
+                certificate_url: "", // Required by interface but not used
+                result: competition.user_score > competition.ai_score ? 'win' : 
+                        competition.user_score < competition.ai_score ? 'lose' : 'tie',
+                user_score: competition.user_score,
+                ai_score: competition.ai_score,
+                difficulty: competition.difficulty
+              }}
+              userName={`${user?.name || 'User'} (${user?.email || 'user@example.com'})`}
+              session={undefined}
+              master={undefined}
+            />
+          </div>
+        )}
+
         {/* Certificate or Upgrade - Fixed premium check */}
         {isPremiumUser() ? (
           <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-6 mb-8">
@@ -747,10 +760,10 @@ export const CompetitionPage: React.FC = () => {
               <Button 
                 onClick={handleGetCertificate}
                 className="ml-auto"
-                disabled={isLoading}
+                disabled={showCertificate}
               >
                 <Award className="h-4 w-4 mr-2" />
-                {isLoading ? 'Generating...' : 'Get Certificate'}
+                {showCertificate ? 'Certificate Generated' : 'Get Certificate'}
               </Button>
             </div>
           </div>

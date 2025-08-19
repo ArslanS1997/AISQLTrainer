@@ -4,7 +4,7 @@ import { apiClient } from '../utils/api';
 import { Button } from './Button';
 
 const SubscriptionManagement: React.FC = () => {
-  const { subscription } = useSubscription(); // Remove refreshSubscription
+  const { subscription, refetchSubscription } = useSubscription();
   const [loading, setLoading] = useState(false);
 
   const handleCancelSubscription = async () => {
@@ -17,8 +17,8 @@ const SubscriptionManagement: React.FC = () => {
       const response = await apiClient.cancelSubscription();
       if (response.data?.success) {
         alert(response.data.message);
-        // Refresh the page to update subscription status
-        window.location.reload();
+        // Refresh subscription data instead of reloading the page
+        await refetchSubscription();
       } else {
         alert('Failed to cancel subscription');
       }
@@ -36,8 +36,8 @@ const SubscriptionManagement: React.FC = () => {
       const response = await apiClient.reactivateSubscription();
       if (response.data?.success) {
         alert(response.data.message);
-        // Refresh the page to update subscription status
-        window.location.reload();
+        // Refresh subscription data instead of reloading the page
+        await refetchSubscription();
       } else {
         alert('Failed to reactivate subscription');
       }
@@ -53,8 +53,8 @@ const SubscriptionManagement: React.FC = () => {
     return null;
   }
 
-  // Check if subscription is set to cancel (you may need to add this property to your UserSubscription type)
-  const isCanceling = (subscription as any).cancel_at_period_end || false;
+  // Check if subscription is set to cancel
+  const isCanceling = subscription.cancel_at_period_end || false;
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -66,10 +66,26 @@ const SubscriptionManagement: React.FC = () => {
           <span className="font-medium text-gray-900">{subscription.plan.display_name}</span>
         </div>
         
+        {subscription.status && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Status:</span>
+            <span className={`font-medium ${
+              subscription.status === 'active' ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+            </span>
+          </div>
+        )}
+        
         {isCanceling && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
             <p className="text-sm text-yellow-800">
               Your subscription will be canceled at the end of your current billing period.
+              {subscription.current_period_end && (
+                <span className="block mt-1">
+                  End date: {new Date(subscription.current_period_end).toLocaleDateString()}
+                </span>
+              )}
             </p>
             <Button
               onClick={handleReactivateSubscription}
@@ -82,7 +98,7 @@ const SubscriptionManagement: React.FC = () => {
           </div>
         )}
         
-        {!isCanceling && (
+        {!isCanceling && subscription.stripe_subscription_id && (
           <Button
             onClick={handleCancelSubscription}
             disabled={loading}

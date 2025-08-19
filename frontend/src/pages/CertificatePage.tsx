@@ -13,14 +13,19 @@ import { Database } from 'lucide-react';
 // Interface definitions
 interface CertificateData {
   id: string;
-  session_id: string;
+  session_id?: string; // Optional for competition certificates
   title: string;
   difficulty: string;
-  score: number;
-  total_points: number;
+  score?: number; // Optional for competition certificates
+  total_points?: number; // Optional for competition certificates
   completion_date: string;
   topic: string;
   certificate_url: string;
+  type?: 'session' | 'competition'; // Add type to distinguish
+  user_score?: number; // For competition certificates
+  ai_score?: number; // For competition certificates
+  performance?: string; // For competition certificates
+  win_status?: string; // For competition certificates
 }
 
 interface CertificatesResponse {
@@ -65,6 +70,9 @@ export const CertificatePage: React.FC = () => {
   const [upgradeMessage, setUpgradeMessage] = useState('');
   const [userPlan, setUserPlan] = useState('free');
 
+  // Add state for competition certificates
+  const [competitionCertificates, setCompetitionCertificates] = useState<CertificateData[]>([]);
+
   useEffect(() => {
     if (user) {
       fetchCertificates();
@@ -79,19 +87,23 @@ export const CertificatePage: React.FC = () => {
       setError(null);
       setRequiresUpgrade(false);
 
-      const response = await apiClient.getUserCertificates();
-      if (response.error) {
-        setError(response.error);
+      // Fetch both practice session certificates and competition certificates
+      const [practiceResponse, competitionResponse] = await Promise.all([
+        apiClient.getUserCertificates(),
+        apiClient.getUserCompetitionCertificates()
+      ]);
+
+      if (practiceResponse.error) {
+        setError(practiceResponse.error);
         setCertificates([]);
-      } else if (response.data) {
-        const data = response.data as CertificatesResponse;
+      } else if (practiceResponse.data) {
+        const data = practiceResponse.data as CertificatesResponse;
         
-        // Handle upgrade requirement
         if (data.requires_upgrade) {
           setRequiresUpgrade(true);
           setUpgradeMessage(data.upgrade_message || 'Upgrade to access certificates');
           setUserPlan(data.user_plan || 'free');
-          setCertificates([]); // Free users see no certificates
+          setCertificates([]);
         } else {
           setRequiresUpgrade(false);
           if (data.certificates && Array.isArray(data.certificates)) {
@@ -99,14 +111,21 @@ export const CertificatePage: React.FC = () => {
           } else {
             setCertificates([]);
           }
-          setUserPlan(data.user_plan || 'pro');
         }
-      } else {
-        setCertificates([]);
       }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load certificates');
+
+      // Handle competition certificates
+      if (competitionResponse.data && competitionResponse.data.success) {
+        setCompetitionCertificates(competitionResponse.data.certificates || []);
+      } else {
+        setCompetitionCertificates([]);
+      }
+
+    } catch (err) {
+      console.error('Error fetching certificates:', err);
+      setError('Failed to fetch certificates');
       setCertificates([]);
+      setCompetitionCertificates([]);
     } finally {
       setLoading(false);
     }
@@ -115,7 +134,7 @@ export const CertificatePage: React.FC = () => {
   const downloadCertificate = (cert: CertificateData) => {
     const link = document.createElement('a');
     link.href = cert.certificate_url;
-    link.download = `certificate-${cert.session_id}.pdf`;
+    link.download = `certificate-${cert.session_id || cert.id}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -217,6 +236,8 @@ export const CertificatePage: React.FC = () => {
     );
   }
 
+  const allCertificates = [...certificates, ...competitionCertificates];
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-6xl mx-auto px-4">
@@ -227,7 +248,7 @@ export const CertificatePage: React.FC = () => {
           <p className="mt-4 text-xl text-gray-600">
             {requiresUpgrade 
               ? "Upgrade to access your earned certificates"
-              : `${certificates.length} Certificate${certificates.length !== 1 ? 's' : ''} Earned`
+              : `${allCertificates.length} Certificate${allCertificates.length !== 1 ? 's' : ''} Earned`
             }
           </p>
         </div>
@@ -241,23 +262,31 @@ export const CertificatePage: React.FC = () => {
             <MasterCertificateCard className="mb-10" />
 
             {/* Certificates Grid */}
-            {certificates.length === 0 ? (
+            {allCertificates.length === 0 ? (
               <div className="text-center py-16">
                 <FileText className="mx-auto h-24 w-24 text-gray-300 mb-6" />
                 <h3 className="text-2xl font-semibold text-gray-900 mb-4">No Certificates Yet</h3>
                 <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                  Complete practice sessions with 70% or higher accuracy to earn your first certificate!
+                  Complete practice sessions with 70% or higher accuracy or win competitions to earn your first certificate!
                 </p>
-                <Button
-                  onClick={() => window.location.href = '/main'}
-                  className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
-                >
-                  Start Practicing
-                </Button>
+                <div className="flex space-x-4 justify-center">
+                  <Button
+                    onClick={() => window.location.href = '/main'}
+                    className="bg-blue-600 hover:bg-blue-700 px-6 py-3"
+                  >
+                    Start Practicing
+                  </Button>
+                  <Button
+                    onClick={() => window.location.href = '/competition'}
+                    className="bg-green-600 hover:bg-green-700 px-6 py-3"
+                  >
+                    Join Competition
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                {certificates.map((cert) => (
+                {allCertificates.map((cert) => (
                   <div key={cert.id} className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow p-6">
                     <div className="flex items-center justify-between mb-4">
                       <Award className="h-10 w-10 text-yellow-500" />
@@ -272,21 +301,50 @@ export const CertificatePage: React.FC = () => {
                     </div>
                     
                     <h3 className="text-xl font-bold text-gray-900 mb-3">{cert.title}</h3>
-                    <p className="text-gray-600 mb-4">Topic: {cert.topic}</p>
+                    <p className="text-gray-600 mb-4">
+                      {cert.type === 'competition' ? 'Competition' : `Topic: ${cert.topic}`}
+                    </p>
                     
                     <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm text-gray-600">Score</span>
-                        <span className="text-lg font-bold text-green-600">
-                          {cert.score}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Date</span>
-                        <span className="text-sm text-gray-900">
-                          {new Date(cert.completion_date).toLocaleDateString()}
-                        </span>
-                      </div>
+                      {cert.type === 'competition' ? (
+                        // Competition certificate display
+                        <>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600">Result</span>
+                            <span className="text-lg font-bold text-green-600">
+                              {cert.win_status}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600">Score</span>
+                            <span className="text-sm font-bold text-blue-600">
+                              {cert.user_score} - {cert.ai_score}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Date</span>
+                            <span className="text-sm text-gray-900">
+                              {new Date(cert.completion_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        // Practice session certificate display
+                        <>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600">Score</span>
+                            <span className="text-lg font-bold text-green-600">
+                              {cert.score}%
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Date</span>
+                            <span className="text-sm text-gray-900">
+                              {new Date(cert.completion_date).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     
                     <div className="flex space-x-2">
@@ -328,20 +386,41 @@ export const CertificatePage: React.FC = () => {
                   </button>
                 </div>
                 
-                <Certificate 
-                  type="session"
-                  userName={user?.name || 'Student'} // Fix: use userName instead of user
-                  session={{
-                    session_id: selectedCertificate.session_id,
-                    title: selectedCertificate.title,
-                    difficulty: selectedCertificate.difficulty,
-                    score: selectedCertificate.score,
-                    total_points: selectedCertificate.total_points,
-                    completion_date: selectedCertificate.completion_date,
-                    topic: selectedCertificate.topic,
-                    certificate_url: selectedCertificate.certificate_url
-                  }}
-                />
+                {selectedCertificate.type === 'competition' ? (
+                  // Competition certificate
+                  <Certificate 
+                    type="competition"
+                    competition={{
+                      name: selectedCertificate.title,
+                      date: new Date(selectedCertificate.completion_date).toLocaleDateString(),
+                      certificate_url: selectedCertificate.certificate_url,
+                      result: (selectedCertificate.user_score || 0) > (selectedCertificate.ai_score || 0) ? 'win' : 
+                              (selectedCertificate.user_score || 0) < (selectedCertificate.ai_score || 0) ? 'lose' : 'tie',
+                      user_score: selectedCertificate.user_score || 0,
+                      ai_score: selectedCertificate.ai_score || 0,
+                      difficulty: selectedCertificate.difficulty.toLowerCase()
+                    }}
+                    userName={`${user?.name || 'User'} (${user?.email || 'user@example.com'})`}
+                    session={undefined}
+                    master={undefined}
+                  />
+                ) : (
+                  // Practice session certificate
+                  <Certificate 
+                    type="session"
+                    userName={user?.name || 'Student'}
+                    session={{
+                      session_id: selectedCertificate.session_id || '',
+                      title: selectedCertificate.title,
+                      difficulty: selectedCertificate.difficulty,
+                      score: selectedCertificate.score || 0,
+                      total_points: selectedCertificate.total_points || 0,
+                      completion_date: selectedCertificate.completion_date,
+                      topic: selectedCertificate.topic,
+                      certificate_url: selectedCertificate.certificate_url
+                    }}
+                  />
+                )}
                 
                 <div className="mt-6 flex justify-end space-x-3">
                   <Button

@@ -76,6 +76,8 @@ async def get_dashboard_stats(
         current_streak=current_streak
     )
 
+
+
 @router.get("/progress", response_model=ProgressResponse)
 async def get_learning_progress(
     current_user: Any = Depends(get_current_user),
@@ -443,6 +445,63 @@ async def get_user_certificates(
         "requires_upgrade": False,
         "user_plan": feature_check.get("current_plan", "pro")
     }
+
+@router.get("/competition-certificates")
+async def get_user_competition_certificates(
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all competition certificates for the current user."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        # Get all completed competitions for the user
+        competitions = db.query(Competition).filter(
+            Competition.user_id == current_user.id,
+            Competition.status == 'completed'
+        ).order_by(Competition.completed_at.desc()).all()
+        
+        certificates = []
+        for comp in competitions:
+            # Calculate performance metrics
+            user_score = comp.user_score or 0
+            ai_score = comp.ai_score or 0
+            total_rounds = 5  # Default to 5 rounds
+            
+            performance = "Excellent" if user_score >= 4 else "Good" if user_score >= 3 else "Fair"
+            win_status = "Winner" if user_score > ai_score else "Runner Up" if user_score == ai_score else "Participant"
+            
+            certificate_data = {
+                "id": comp.id,
+                "type": "competition",
+                "competition_id": comp.id,
+                "user_score": user_score,
+                "ai_score": ai_score,
+                "difficulty": comp.difficulty.capitalize() if comp.difficulty else "Basic",
+                "total_rounds": total_rounds,
+                "completion_date": comp.completed_at.isoformat() if comp.completed_at else datetime.utcnow().isoformat(),
+                "user_name": current_user.email or current_user.username,
+                "certificate_id": f"CERT_{comp.id[:8].upper()}",
+                "performance": performance,
+                "win_status": win_status,
+                "rounds_won": user_score,
+                "rounds_total": total_rounds,
+                "success_rate": f"{(user_score / total_rounds) * 100:.0f}%",
+                "title": f"SQL Competition - {comp.difficulty.capitalize() if comp.difficulty else 'Basic'}",
+                "topic": "Competition",
+                "certificate_url": f"/api/achievements/competition-certificate/{comp.id}"
+            }
+            certificates.append(certificate_data)
+        
+        return {
+            "success": True,
+            "certificates": certificates,
+            "total_count": len(certificates)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch competition certificates: {str(e)}")
 
 @router.get("/certificate/{session_id}")
 async def get_certificate(
