@@ -240,7 +240,7 @@ const PaymentSuccessPage: React.FC = () => {
         {/* Action Buttons */}
         <div className="text-center space-y-4">
           <Button 
-            onClick={() => navigate('/main')}
+            onClick={() => navigate('/practice')}
             className="bg-blue-600 hover:bg-blue-700 px-8 py-3 text-lg"
           >
             Start Learning <ArrowRight className="h-5 w-5 ml-2" />
