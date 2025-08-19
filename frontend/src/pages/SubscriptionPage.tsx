@@ -5,14 +5,15 @@ import { Button } from '../components/Button';
 import { CheckCircle, CreditCard, Database, Trophy, BarChart3, Lock } from 'lucide-react';
 import { UserSubscription, SubscriptionPlan } from '../types';
 import { useSubscription } from '../contexts/SubscriptionContext';
-import { PlanChangeModal } from '../components/PlanChangeModal'; // Add this import
+import { PlanChangeModal } from '../components/PlanChangeModal';
 
 export const SubscriptionPage: React.FC = () => {
   const { user } = useAuth();
   const { subscription, loading, error, refetchSubscription } = useSubscription();
   const currentPlan = subscription?.plan?.name || 'free';
   const [canceling, setCanceling] = useState(false);
-  const [showPlanChangeModal, setShowPlanChangeModal] = useState(false); // Add this state
+  const [showPlanChangeModal, setShowPlanChangeModal] = useState(false);
+  const [selectedTargetPlan, setSelectedTargetPlan] = useState('');
 
   const getPlanDisplayName = (planObj?: SubscriptionPlan | string) => {
     let planName: string;
@@ -87,13 +88,14 @@ export const SubscriptionPage: React.FC = () => {
   };
 
   const handleChangePlan = () => {
-    if (currentPlan === 'free') {
-      // Free users go to pricing page
-      window.location.href = '/pricing';
-    } else {
-      // Existing subscribers open plan change modal
-      setShowPlanChangeModal(true);
-    }
+    // Always redirect to pricing page where they can see all plans
+    window.location.href = '/pricing';
+  };
+
+  // Alternative approach: Show plan selection first, then open modal
+  const openPlanChangeModal = (targetPlan: string) => {
+    setSelectedTargetPlan(targetPlan);
+    setShowPlanChangeModal(true);
   };
 
   return (
@@ -201,7 +203,7 @@ export const SubscriptionPage: React.FC = () => {
                     <Trophy className="h-5 w-5 text-yellow-500" />
                     <span className="font-medium">Competitions Entered</span>
                   </div>
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600">dd 
                     {usage.competitions_entered} / {limits.competitions}
                   </span>
                 </div>
@@ -316,17 +318,16 @@ export const SubscriptionPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Plan Change Modal */}
-      {showPlanChangeModal && (
+      {/* Plan Change Modal - only show if we have a target plan */}
+      {showPlanChangeModal && selectedTargetPlan && (
         <PlanChangeModal
           isOpen={showPlanChangeModal}
-          onClose={() => setShowPlanChangeModal(false)}
-          targetPlan=""
-          billingCycle="monthly"
-          onPlanChanged={async () => {
-            await refetchSubscription();
+          onClose={() => {
             setShowPlanChangeModal(false);
+            setSelectedTargetPlan('');
           }}
+          targetPlan={selectedTargetPlan}
+          billingCycle="monthly"
         />
       )}
     </div>
