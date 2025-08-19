@@ -64,7 +64,7 @@ class SubscriptionService:
             Subscription.user_id == user_id,
             Subscription.status == 'active',
             Subscription.current_period_end > datetime.utcnow()
-        ).first()
+        ).order_by(Subscription.current_period_end.desc()).first()
         
         # If no subscription exists, create one with the default plan
         if not subscription:
