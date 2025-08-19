@@ -17,6 +17,7 @@ import traceback
 import logging
 import json
 import asyncio
+from models.database import SubscriptionPlan, UserUsage
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -186,49 +187,102 @@ async def create_checkout_session(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# Fix the get_user_subscription function to only access existing attributes
 @router.get("/user-subscription")
 async def get_user_subscription(
     current_user: Any = Depends(get_current_user),
-    db = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
-    """Get user's current subscription details."""
+    """Get user's subscription details."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        service = SubscriptionService(db)
-        plan = service.get_user_plan(current_user.id)
-        usage = service.get_user_usage(current_user.id)
-        
-        # Get subscription details from database
+        # Get user's subscription
         subscription = db.query(Subscription).filter(
             Subscription.user_id == current_user.id
         ).first()
         
+        # Get user's plan details
+        plan_name = subscription.plan if subscription else 'free'
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.name == plan_name
+        ).first()
+        
+        # Get current month's usage
+        current_date = datetime.utcnow()
+        usage = db.query(UserUsage).filter(
+            UserUsage.user_id == current_user.id,
+            UserUsage.year == current_date.year,
+            UserUsage.month == current_date.month
+        ).first()
+        
+        if not usage:
+            usage = UserUsage(
+                user_id=current_user.id,
+                year=current_date.year,
+                month=current_date.month,
+                schemas_generated=0,
+                competitions_entered=0
+            )
+        
+        # Build response with only existing attributes
         subscription_data = {
-            'plan': plan,
-            'usage': usage
+            'plan': {
+                'name': plan.name if plan else 'free',
+                'display_name': plan.display_name if plan else 'Free Plan',
+                'limits': {
+                    'max_schemas_per_month': plan.max_schemas_per_month if plan else 5,
+                    'max_competitions_per_month': plan.max_competitions_per_month if plan else 3
+                },
+                'features': {
+                    'can_download_certificates': plan.can_download_certificates if plan else False,
+                    'can_get_master_certificate': plan.can_get_master_certificate if plan else False,
+                    'ai_model_tier': plan.ai_model_tier if plan else 'gpt-4o-mini'
+                },
+                'selected_model_index': subscription.selected_model_index if subscription else 0
+            },
+            'usage': {
+                'schemas_generated': usage.schemas_generated,
+                'competitions_entered': usage.competitions_entered
+            }
         }
         
-        # Add subscription details if they exist
+        # Add subscription details if they exist (only existing attributes)
         if subscription:
             subscription_data.update({
                 'stripe_subscription_id': subscription.stripe_subscription_id,
                 'status': subscription.status,
                 'cancel_at_period_end': subscription.cancel_at_period_end,
-                'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None,
-                'stripe_price_id': subscription.stripe_price_id,
-                'billing_cycle': subscription.billing_cycle
+                'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None
+                # Removed stripe_price_id and billing_cycle as they don't exist
             })
         
         return subscription_data
         
     except Exception as e:
-        usage = {
-            'schemas_generated': 0,
-            'competitions_entered': 0
+        # Return default data on error instead of raising exception
+        print(f"Error fetching subscription: {e}")
+        return {
+            'plan': {
+                'name': 'free',
+                'display_name': 'Free Plan',
+                'limits': {
+                    'max_schemas_per_month': 5,
+                    'max_competitions_per_month': 3
+                },
+                'features': {
+                    'can_download_certificates': False,
+                    'can_get_master_certificate': False,
+                    'ai_model_tier': 'gpt-4o-mini'
+                },
+                'selected_model_index': 0
+            },
+            'usage': {
+                'schemas_generated': 0,
+                'competitions_entered': 0
+            }
         }
-        raise HTTPException(status_code=500, detail=f"Failed to fetch subscription: {str(e)}")
 
 @router.get("/feature-check/{feature}")
 async def check_feature_access(
