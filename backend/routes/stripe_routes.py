@@ -262,27 +262,50 @@ async def get_user_subscription(
         
     except Exception as e:
         # Return default data on error instead of raising exception
-        print(f"Error fetching subscription: {e}")
-        return {
-            'plan': {
-                'name': 'free',
-                'display_name': 'Free Plan',
-                'limits': {
-                    'max_schemas_per_month': 5,
-                    'max_competitions_per_month': 3
-                },
-                'features': {
-                    'can_download_certificates': False,
-                    'can_get_master_certificate': False,
-                    'ai_model_tier': 'gpt-4o-mini'
-                },
-                'selected_model_index': 0
-            },
-            'usage': {
-                'schemas_generated': 0,
-                'competitions_entered': 0
-            }
-        }
+        # print(f"Error fetching subscription: {e}")
+        # return {
+        #     'plan': {
+        #         'name': 'free',
+        #         'display_name': 'Free Plan',
+        #         'limits': {
+        #             'max_schemas_per_month': 5,
+        #             'max_competitions_per_month': 3
+        #         },
+        #         'features': {
+        #             'can_download_certificates': False,
+        #             'can_get_master_certificate': False,
+        #             'ai_model_tier': 'gpt-4o-mini'
+        #         },
+        #         'selected_model_index': 0
+        #     },
+        #     'usage': {
+        #         'schemas_generated': 0,
+        #         'competitions_entered': 0
+        #     }
+        # }
+        # print(f"Error fetching subscription: {e}")
+        # return {
+        #     'plan': {
+        #         'name': 'free',
+        #         'display_name': 'Free Plan',
+        #         'limits': {
+        #             'max_schemas_per_month': 5,
+        #             'max_competitions_per_month': 3
+        #         },
+        #         'features': {
+        #             'can_download_certificates': False,
+        #             'can_get_master_certificate': False,
+        #             'ai_model_tier': 'gpt-4o-mini'
+        #         },
+        #         'selected_model_index': 0
+        #     },
+        #     'usage': {
+        #         'schemas_generated': 0,
+        #         'competitions_entered': 0
+        #     }
+        # }
+        raise HTTPException(status_code=500, detail=f"Error fetching subscription: {e}")
+
 
 @router.get("/feature-check/{feature}")
 async def check_feature_access(
@@ -299,11 +322,15 @@ async def check_feature_access(
     
     return result
 
+# Add better error handling and logging to the webhook handler
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Handle Stripe webhooks."""
     try:
         print("🎯 Webhook received!")
+        print(f"🔗 Request URL: {request.url}")
+        print(f"📝 Request method: {request.method}")
+        print(f"🔑 Headers: {dict(request.headers)}")
 
         payload = await request.body()
         sig_header = request.headers.get('stripe-signature')
@@ -313,6 +340,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if not STRIPE_WEBHOOK_SECRET:
             print("❌ STRIPE_WEBHOOK_SECRET not set!")
+            print(f" Available env vars: {[k for k in os.environ.keys() if 'STRIPE' in k]}")
             raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
         try:
@@ -320,6 +348,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 payload, sig_header, STRIPE_WEBHOOK_SECRET
             )
             print(f"✅ Event verified: {event['type']}")
+            print(f"🔍 Event data: {json.dumps(event, indent=2)}")
         except ValueError as e:
             print(f"❌ Invalid payload: {e}")
             log_webhook_event("invalid_payload", {"id": "unknown"}, False, str(e))
@@ -339,44 +368,30 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         try:
             if event['type'] == 'checkout.session.completed':
                 session = event['data']['object']
+                print(f"🎯 Processing checkout.session.completed for session: {session['id']}")
                 await handle_successful_payment(session, db)
                 print("✅ Handled checkout.session.completed")
                 log_webhook_event(event['type'], event, True)
 
             elif event['type'] == 'invoice.payment_succeeded':
                 invoice = event['data']['object']
+                print(f" Processing invoice.payment_succeeded for invoice: {invoice['id']}")
                 await handle_invoice_payment_succeeded(invoice, db)
                 print("✅ Handled invoice.payment_succeeded")
                 log_webhook_event(event['type'], event, True)
 
             elif event['type'] == 'customer.subscription.deleted':
                 subscription = event['data']['object']
+                print(f"🎯 Processing customer.subscription.deleted for subscription: {subscription['id']}")
                 await handle_subscription_deleted(subscription, db)
                 print("✅ Handled customer.subscription.deleted")
                 log_webhook_event(event['type'], event, True)
 
             elif event['type'] == 'customer.subscription.updated':
                 subscription = event['data']['object']
+                print(f"🎯 Processing customer.subscription.updated for subscription: {subscription['id']}")
                 await handle_subscription_updated(subscription, db)
                 print("✅ Handled customer.subscription.updated")
-                log_webhook_event(event['type'], event, True)
-
-            elif event['type'] == 'invoice.upcoming':
-                invoice = event['data']['object']
-                await handle_upcoming_invoice(invoice, db)
-                print("✅ Handled invoice.upcoming")
-                log_webhook_event(event['type'], event, True)
-
-            elif event['type'] == 'invoice.created':
-                invoice = event['data']['object']
-                await handle_invoice_created(invoice, db)
-                print("✅ Handled invoice.created")
-                log_webhook_event(event['type'], event, True)
-
-            elif event['type'] == 'invoice.paid':
-                invoice = event['data']['object']
-                await handle_invoice_paid(invoice, db)
-                print("✅ Handled invoice.paid")
                 log_webhook_event(event['type'], event, True)
 
             else:
@@ -387,9 +402,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             print(f"❌ Error processing event: {e}")
             print(f" Event type: {event['type']}")
             print(f" Event data keys: {list(event['data']['object'].keys()) if 'data' in event and 'object' in event['data'] else 'No data object'}")
-            # Log more details about the error
             print(f"📋 Full traceback: {traceback.format_exc()}")
-            # Log the failed event
             log_webhook_event(event['type'], event, False, str(e))
             raise HTTPException(status_code=500, detail=f"Error processing event: {str(e)}")
 
@@ -402,22 +415,29 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
 async def handle_successful_payment(session, db: Session):
     """Handle successful checkout session."""
-    async def _process_payment():
+    try:
         print(f"🎯 Processing checkout.session.completed for session: {session['id']}")
+        print(f"🔍 Session data: {json.dumps(session, indent=2)}")
 
         user_id = session['metadata'].get('user_id')
         plan = session['metadata'].get('plan')
 
         if not user_id or not plan:
             print(f"❌ Missing metadata: user_id={user_id}, plan={plan}")
+            print(f" Available metadata: {session.get('metadata', {})}")
             raise ValueError("Missing required metadata")
 
         print(f"👤 User ID: {user_id}, Plan: {plan}")
 
         # Get the subscription from Stripe
         if session.get('subscription'):
-            stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
-            print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
+            try:
+                stripe_subscription = stripe.Subscription.retrieve(session['subscription'])
+                print(f"💳 Stripe subscription retrieved: {stripe_subscription.id}")
+                print(f" Subscription data: {json.dumps(stripe_subscription, indent=2)}")
+            except Exception as e:
+                print(f"❌ Error retrieving Stripe subscription: {e}")
+                raise ValueError(f"Failed to retrieve Stripe subscription: {e}")
         else:
             print("❌ No subscription found in session")
             raise ValueError("No subscription found in checkout session")
@@ -441,7 +461,7 @@ async def handle_successful_payment(session, db: Session):
                         # Update user's ID to match the one from metadata
                         user.id = user_id
                         db.commit()
-                        print(f"💳 Updated user ID to: {user_id}")
+                        print(f" Updated user ID to: {user_id}")
                     else:
                         print(f"❌ User not found by email: {customer_email}")
                         raise ValueError(f"User not found by ID or email: {user_id}")
@@ -477,6 +497,7 @@ async def handle_successful_payment(session, db: Session):
             subscription.plan = plan
             subscription.current_period_end = current_period_end
             subscription.cancel_at_period_end = stripe_subscription.cancel_at_period_end
+            subscription.updated_at = datetime.utcnow()
         else:
             print(f"🆕 Creating new subscription for user: {user_id}")
             subscription = Subscription(
@@ -492,13 +513,17 @@ async def handle_successful_payment(session, db: Session):
         try:
             db.commit()
             print(f"✅ Subscription saved successfully: {subscription.plan}")
+            print(f" Final subscription data: {subscription.id}, {subscription.plan}, {subscription.status}")
         except Exception as e:
             print(f"❌ Database error: {e}")
+            print(f" Database traceback: {traceback.format_exc()}")
             db.rollback()
             raise
 
-    # Retry the operation if it fails
-    return await retry_webhook_operation(_process_payment)
+    except Exception as e:
+        print(f"❌ Error in handle_successful_payment: {e}")
+        print(f"📋 Full traceback: {traceback.format_exc()}")
+        raise
 
 # Fix for handle_invoice_payment_succeeded function:
 async def handle_invoice_payment_succeeded(invoice, db: Session):
@@ -1222,43 +1247,75 @@ async def get_subscription_status(
 async def verify_checkout_session(session_id: str):
     """Verify a Stripe checkout session by ID and return payment details."""
     try:
+        print(f"🎯 Verifying checkout session: {session_id}")
+        
         # Retrieve the checkout session from Stripe
         checkout_session = stripe.checkout.Session.retrieve(session_id)
+        print(f"✅ Checkout session retrieved: {checkout_session.id}")
         
         # Check if the session is completed and paid
         if checkout_session.payment_status == 'paid' and checkout_session.status == 'complete':
+            print(f"✅ Payment is completed and paid")
+            
             # Get subscription details if available
             subscription_id = checkout_session.subscription
             subscription_details = None
             
             if subscription_id:
                 try:
+                    print(f"🔍 Retrieving subscription: {subscription_id}")
                     subscription = stripe.Subscription.retrieve(subscription_id)
+                    print(f"✅ Subscription retrieved: {subscription.id}")
+                    
+                    # Debug: Print subscription structure
+                    print(f"🔍 Subscription keys: {list(subscription.keys())}")
+                    print(f"🔍 Subscription items: {subscription.items}")
                     
                     # Safely get the plan from subscription items
                     plan_name = None
                     if hasattr(subscription, 'items') and subscription.items:
-                        # Get the first item's price lookup key
+                        print(f"🔍 Subscription has items attribute")
                         if hasattr(subscription.items, 'data') and subscription.items.data:
+                            print(f"🔍 Subscription items has data: {len(subscription.items.data)} items")
                             first_item = subscription.items.data[0]
+                            print(f"🔍 First item keys: {list(first_item.keys())}")
                             if hasattr(first_item, 'price') and first_item.price:
+                                print(f"🔍 First item has price: {first_item.price}")
                                 plan_name = getattr(first_item.price, 'lookup_key', None)
+                                print(f"🔍 Plan from lookup_key: {plan_name}")
                     
                     # Fallback: try to get plan from metadata or other sources
                     if not plan_name:
-                        # Check if we have metadata with plan info
+                        print(f"🔍 No plan from lookup_key, checking metadata")
                         if hasattr(checkout_session, 'metadata') and checkout_session.metadata:
                             plan_name = checkout_session.metadata.get('plan')
+                            print(f"🔍 Plan from checkout metadata: {plan_name}")
+                    
+                    # Safely get current_period_end
+                    current_period_end = None
+                    try:
+                        if hasattr(subscription, 'current_period_end') and subscription.current_period_end:
+                            current_period_end = safe_timestamp_to_datetime(subscription.current_period_end)
+                            print(f"✅ Current period end: {current_period_end}")
+                        else:
+                            print(f"⚠️ No current_period_end in subscription")
+                    except Exception as e:
+                        print(f"⚠️ Error parsing current_period_end: {e}")
+                        current_period_end = None
                     
                     subscription_details = {
                         "id": subscription.id,
                         "status": subscription.status,
                         "plan": plan_name,
-                        "current_period_end": subscription.current_period_end,
-                        "cancel_at_period_end": subscription.cancel_at_period_end
+                        "current_period_end": current_period_end,
+                        "cancel_at_period_end": getattr(subscription, 'cancel_at_period_end', False)
                     }
+                    print(f"✅ Subscription details: {subscription_details}")
+                    
                 except Exception as e:
-                    print(f"Warning: Could not retrieve subscription {subscription_id}: {e}")
+                    print(f"❌ Error retrieving subscription {subscription_id}: {e}")
+                    print(f"📋 Traceback: {traceback.format_exc()}")
+                    
                     # Try to get basic info from checkout session metadata
                     subscription_details = {
                         "id": subscription_id,
@@ -1267,8 +1324,10 @@ async def verify_checkout_session(session_id: str):
                         "current_period_end": None,
                         "cancel_at_period_end": False
                     }
+                    print(f"🔄 Using fallback subscription details: {subscription_details}")
             
-            return {
+            # Build response
+            response_data = {
                 "success": True,
                 "session_id": session_id,
                 "payment_status": checkout_session.payment_status,
@@ -1279,7 +1338,12 @@ async def verify_checkout_session(session_id: str):
                 "subscription": subscription_details,
                 "metadata": checkout_session.metadata
             }
+            
+            print(f"✅ Response data: {response_data}")
+            return response_data
+            
         else:
+            print(f"⚠️ Payment not completed: status={checkout_session.status}, payment_status={checkout_session.payment_status}")
             return {
                 "success": False,
                 "session_id": session_id,
@@ -1288,13 +1352,16 @@ async def verify_checkout_session(session_id: str):
                 "error": "Payment not completed"
             }
             
-    except stripe.error.InvalidRequestError:
+    except stripe.error.InvalidRequestError as e:
+        print(f"❌ Invalid session ID: {e}")
         return {
             "success": False,
             "session_id": session_id,
             "error": "Invalid session ID"
         }
     except Exception as e:
+        print(f"❌ Error verifying session: {e}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "session_id": session_id,
