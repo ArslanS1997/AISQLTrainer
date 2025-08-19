@@ -198,23 +198,26 @@ async def get_user_subscription(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        # Get the MOST RECENT ACTIVE subscription for the user
+        # Use the SAME logic as SubscriptionService to get the user's plan
+        # Check for active subscription (same as SubscriptionService)
         subscription = db.query(Subscription).filter(
             Subscription.user_id == current_user.id,
-            Subscription.status == 'active'  # Only get active subscriptions
-        ).order_by(Subscription.updated_at.desc()).first()  # Get most recently updated
+            Subscription.status == 'active',
+            Subscription.current_period_end > datetime.utcnow()
+        ).order_by(Subscription.current_period_end.desc()).first()
         
-        # If no active subscription, check for any subscription and get the latest
+        # If no active subscription exists, check for any subscription
         if not subscription:
             subscription = db.query(Subscription).filter(
                 Subscription.user_id == current_user.id
             ).order_by(Subscription.updated_at.desc()).first()
         
-        # Get user's plan details - ALWAYS fetch fresh from database
+        # Get the plan name from the subscription (same as SubscriptionService)
         plan_name = subscription.plan if subscription else 'free'
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.name == plan_name
-        ).first()
+        
+        # Get user's plan details from PLAN_CONFIGS (same as SubscriptionService)
+        from utils.subscription_service import PLAN_CONFIGS
+        plan_config = PLAN_CONFIGS.get(plan_name, PLAN_CONFIGS['free'])
         
         # Get current month's usage - ALWAYS fetch fresh and create if missing
         current_date = datetime.utcnow()
@@ -256,21 +259,21 @@ async def get_user_subscription(
             db.refresh(usage)
             print(f"✅ Created new usage record for user {current_user.id}")
         
-        # Build response with fresh data
+        # Build response using the SAME logic as SubscriptionService
         subscription_data = {
             'plan': {
-                'name': plan.name if plan else 'free',
-                'display_name': plan.display_name if plan else 'Free Plan',
+                'name': plan_name,  # Use the plan from subscription
+                'display_name': plan_config['display_name'],
                 'limits': {
-                    'max_schemas_per_month': plan.max_schemas_per_month if plan else 5,
-                    'max_competitions_per_month': plan.max_competitions_per_month if plan else 3
+                    'max_schemas_per_month': plan_config['limits']['max_schemas_per_month'],
+                    'max_competitions_per_month': plan_config['limits']['max_competitions_per_month']
                 },
                 'features': {
-                    'can_download_certificates': plan.can_download_certificates if plan else False,
-                    'can_get_master_certificate': plan.can_get_master_certificate if plan else False,
-                    'ai_model_tier': plan.ai_model_tier if plan else 'gpt-4o-mini'
+                    'can_download_certificates': plan_config['features']['can_download_certificates'],
+                    'can_get_master_certificate': plan_config['features']['can_get_master_certificate'],
+                    'ai_model_tier': plan_config['features']['ai_model_tier']
                 },
-                'selected_model_index': subscription.selected_model_index if subscription else 0
+                'selected_model_index': getattr(subscription, 'selected_model_index', 0) if subscription else 0
             },
             'usage': {
                 'schemas_generated': usage.schemas_generated,
@@ -278,7 +281,7 @@ async def get_user_subscription(
             }
         }
         
-        # Add subscription details if they exist (only existing attributes)
+        # Add subscription details if they exist
         if subscription:
             subscription_data.update({
                 'stripe_subscription_id': subscription.stripe_subscription_id,
@@ -289,8 +292,9 @@ async def get_user_subscription(
                 'updated_at': subscription.updated_at.isoformat() if subscription.updated_at else None
             })
         
-        print(f"✅ Fetched fresh subscription data for user {current_user.id}")
-        print(f" Plan: {subscription_data['plan']['name']}")
+        print(f"✅ Fetched subscription data for user {current_user.id}")
+        print(f" Plan: {plan_name} (from subscription)")
+        print(f" Plan config: {plan_config['display_name']}")
         print(f" Usage: {subscription_data['usage']}")
         
         return subscription_data
