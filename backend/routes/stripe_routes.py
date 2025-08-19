@@ -259,19 +259,19 @@ async def get_user_subscription(
             db.refresh(usage)
             print(f"✅ Created new usage record for user {current_user.id}")
         
-        # Build response using the SAME logic as SubscriptionServiceadd
+        # Build response using the SAME logic as SubscriptionService
         subscription_data = {
             'plan': {
-                'name': plan_name,  # Use the plan from subscription
-                'display_name': plan_config['display_name'],
+                'name': plan_name,  # Use the plan from subscription (should be "max")
+                'display_name': plan_config['display_name'],  # Should be "Max Plan"
                 'limits': {
-                    'max_schemas_per_month': plan_config['limits']['max_schemas_per_month'],
-                    'max_competitions_per_month': plan_config['limits']['max_competitions_per_month']
+                    'max_schemas_per_month': plan_config['limits']['max_schemas_per_month'],  # Should be 50
+                    'max_competitions_per_month': plan_config['limits']['max_competitions_per_month']  # Should be 50
                 },
                 'features': {
-                    'can_download_certificates': plan_config['features']['can_download_certificates'],
-                    'can_get_master_certificate': plan_config['features']['can_get_master_certificate'],
-                    'ai_model_tier': plan_config['features']['ai_model_tier']
+                    'can_download_certificates': plan_config['features']['can_download_certificates'],  # Should be True
+                    'can_get_master_certificate': plan_config['features']['can_get_master_certificate'],  # Should be True
+                    'ai_model_tier': plan_config['features']['ai_model_tier']  # Should be "gpt-5"
                 },
                 'selected_model_index': getattr(subscription, 'selected_model_index', 0) if subscription else 0
             },
@@ -293,8 +293,11 @@ async def get_user_subscription(
             })
         
         print(f"✅ Fetched subscription data for user {current_user.id}")
-        print(f" Plan: {plan_name} (from subscription)")
-        print(f" Plan config: {plan_config['display_name']}")
+        print(f" Plan from subscription: {plan_name}")
+        print(f" Plan config used: {plan_config['name']}")
+        print(f" Plan display name: {plan_config['display_name']}")
+        print(f" Plan limits: {plan_config['limits']}")
+        print(f" Plan features: {plan_config['features']}")
         print(f" Usage: {subscription_data['usage']}")
         
         return subscription_data
