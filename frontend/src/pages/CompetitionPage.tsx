@@ -134,6 +134,16 @@ export const CompetitionPage: React.FC = () => {
   const [showExplanation, setShowExplanation] = useState(false);
   const [currentExplanation, setCurrentExplanation] = useState('');
   const [parsedTables, setParsedTables] = useState<TableData[]>([]);
+  const [showRoundResult, setShowRoundResult] = useState(false);
+  const [currentRoundResult, setCurrentRoundResult] = useState<{
+    round: number;
+    human_correct: boolean;
+    ai_correct: boolean;
+    human_sql: string;
+    ai_sql: string;
+    explanation: string;
+    winner: string;
+  } | null>(null);
 
   const [competition, setCompetition] = useState<CompetitionState>({
     competitionId: null,
@@ -199,7 +209,221 @@ export const CompetitionPage: React.FC = () => {
     }
   };
 
-  // Add this function after the existing functions (around line 190, after getStoredAIResponse)
+  // Fix the handleSubmitAnswer function to properly complete and fix the button state
+  const handleSubmitAnswer = async (timeExpired: boolean = false) => {
+    if (!competition.competitionId || !competition.user_query.trim()) {
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Step 1: Check human response
+      const humanCheck = await apiClient.checkHumanResponse({
+        competition_id: competition.competitionId!,
+        question: competition.current_question,
+        sql: competition.user_query,
+        difficulty: competition.difficulty,
+        round: competition.current_round,
+        time_limit: 180,
+        response_time: 180 - competition.time_remaining
+      });
+
+      if (!humanCheck.data) {
+        console.error('Human check failed:', humanCheck.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 2: Get stored AI response for this round to get the SQL
+      const storedAIResponse = await apiClient.getStoredAIResponse(
+        competition.competitionId!,
+        competition.current_round
+      );
+
+      if (!storedAIResponse.data) {
+        console.error('No stored AI response found for this round');
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 3: Check AI response for this round
+      const aiCheck = await apiClient.checkAIResponse({
+        competition_id: competition.competitionId!,
+        question: competition.current_question,
+        sql: '', // Backend will get stored AI SQL from DB
+        difficulty: competition.difficulty,
+        round: competition.current_round,
+        time_limit: 30,
+        response_time: 0 // Backend will get stored AI response time
+      });
+
+      if (!aiCheck.data) {
+        console.error('AI check failed:', aiCheck.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 4: Send to round-result to get the complete round result
+      const roundResult = await apiClient.getRoundResult({
+        competition_id: competition.competitionId!,
+        round: competition.current_round,
+        question: competition.current_question,
+        human_explanation: humanCheck.data.explanation,
+        ai_explanation: aiCheck.data.explanation,
+        human_sql: competition.user_query,
+        ai_sql: storedAIResponse.data.ai_sql,
+        human_iscorrect: humanCheck.data.is_correct,
+        ai_iscorrect: aiCheck.data.is_correct,
+        difficulty: competition.difficulty
+      });
+
+      if (!roundResult.data) {
+        console.error('Round result failed:', roundResult.error);
+        setIsLoading(false);
+        return;
+      }
+
+      // Store the data in variables to avoid TypeScript errors
+      const humanData = humanCheck.data;
+      const aiData = aiCheck.data;
+      const roundData = roundResult.data;
+      const aiSQL = storedAIResponse.data.ai_sql;
+      const aiResponseTime = storedAIResponse.data.ai_response_time || 0;
+
+      // Show round result and enable next round
+      setCurrentRoundResult({
+        round: competition.current_round,
+        winner: roundData.winner,
+        human_sql: competition.user_query,
+        ai_sql: aiSQL,
+        human_correct: humanData.is_correct,
+        ai_correct: aiData.is_correct,
+        explanation: roundData.explanation
+      });
+      
+      setShowRoundResult(true);
+
+      // Update competition state with results
+      setCompetition(prev => ({
+        ...prev,
+        rounds_data: [
+          ...prev.rounds_data,
+          {
+            round: competition.current_round,
+            question: competition.current_question,
+            user_query: competition.user_query,
+            ai_query: aiSQL,
+            user_correct: humanData.is_correct,
+            ai_correct: aiData.is_correct,
+            user_time: 180 - competition.time_remaining,
+            ai_time: aiResponseTime,
+            explanation: roundData.explanation,
+            correct_answer: ''
+          }
+        ],
+        user_score: prev.user_score + (humanData.is_correct ? 1 : 0),
+        ai_score: prev.ai_score + (aiData.is_correct ? 1 : 0)
+      }));
+      
+      // COMPLETE THE FLOW: Handle final round completion or get AI response for next question
+      if (competition.current_round === 5) {
+        // FINAL ROUND COMPLETED - Update backend usage and mark competition as completed
+        console.log('Final round completed, updating backend usage...');
+        
+        try {
+          // Call backend to increment competition usage
+          const usageResponse = await apiClient.incrementCompetitionUsage(competition.competitionId!);
+          if (usageResponse.data) {
+            console.log('Competition usage updated successfully');
+          } else {
+            console.error('Failed to update competition usage:', usageResponse.error);
+          }
+        } catch (error) {
+          console.error('Error updating competition usage:', error);
+        }
+        
+        // Set competition status to completed
+        setCompetition(prev => ({
+          ...prev,
+          status: 'completed'
+        }));
+        
+        // Show final results
+        setShowResults(true);
+        
+      } else {
+        // NOT THE FINAL ROUND - Automatically send AI response request for next question
+        const nextRound = competition.current_round + 1;
+        console.log(`Automatically sending AI response request for next question (round ${nextRound})...`);
+        
+        // Send AI response request for next round in the background
+        const aiResponse = await apiClient.getAIResponse({
+          competition_id: competition.competitionId!,
+          round: nextRound,
+          question: competition.questions[nextRound - 1]?.question || '',
+          schema_ddl: competition.schema_ddl,
+          difficulty: competition.difficulty,
+          time_limit: 30
+        });
+        
+        if (aiResponse.data) {
+          console.log(`AI response request sent for round ${nextRound}`);
+          // Store the AI response
+          setCompetition(prev => ({
+            ...prev,
+            aiResponses: {
+              ...prev.aiResponses,
+              [nextRound]: aiResponse.data!.answer
+            }
+          }));
+        } else {
+          console.error(`Failed to send AI response request for round ${nextRound}:`, aiResponse.error);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error submitting answer:', error);
+    } finally {
+      // CRITICAL: Always set loading to false to fix the button state
+      setIsLoading(false);
+    }
+  };
+
+  // Update moveToNextRound to handle the next question flow
+  const moveToNextRound = async () => {
+    if (competition.current_round < 5) {
+      const nextRound = competition.current_round + 1;
+      console.log(`Moving to round ${nextRound}`);
+      
+      // Move to next round
+      setCompetition(prev => ({
+        ...prev,
+        current_round: nextRound,
+        current_question: competition.questions[nextRound - 1]?.question || '',
+        user_query: '',
+        time_remaining: 180
+      }));
+      
+      // Hide round result and reset for next round
+      setShowRoundResult(false);
+      setCurrentRoundResult(null);
+      
+      console.log(`Moved to round ${nextRound}, timer reset to 180 seconds`);
+      console.log(`Next question: ${competition.questions[nextRound - 1]?.question}`);
+      
+      // The AI response should already be generated from handleSubmitAnswer
+      // If not, we can generate it here as fallback
+      if (!competition.aiResponses[nextRound]) {
+        console.warn(`AI response for round ${nextRound} not found, generating now...`);
+        await getAIResponseForRound(nextRound);
+      }
+    } else {
+      console.warn('Attempted to move to next round after final round');
+    }
+  };
+
+  // Also update startCompetition to get AI response for round 1
   const startCompetition = async () => {
     setIsLoading(true);
     
@@ -225,14 +449,14 @@ export const CompetitionPage: React.FC = () => {
           questions: response.data.questions,
           total_rounds: response.data.total_rounds,
           current_round: response.data.current_round,
-          expires_at: new Date(response.data.expires_at), // Convert string to Date
-          status: 'active' as const, // Set to 'active' instead of using response.data.status
+          expires_at: new Date(response.data.expires_at),
+          status: 'active' as const,
           current_question: response.data.questions[0]?.question || '',
           user_query: '',
-          time_remaining: response.data.time_limit, // Use time_limit to set time_remaining
+          time_remaining: response.data.time_limit,
           user_score: 0,
           ai_score: 0,
-          result: null, // Add the missing result property
+          result: null,
           rounds_data: [],
           can_get_certificate: false,
           aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' },
@@ -243,6 +467,7 @@ export const CompetitionPage: React.FC = () => {
         console.log('Sending AI response request for round 1...');
         const aiResponse = await apiClient.getAIResponse({
           competition_id: response.data.competition_id,
+          round: 1,
           question: response.data.questions[0]?.question || '',
           schema_ddl: response.data.schema_ddl,
           difficulty: response.data.difficulty,
@@ -270,16 +495,17 @@ export const CompetitionPage: React.FC = () => {
     }
   };
 
-  // Update this function to actually send the request to the backend
+  // Update getAIResponseForRound to immediately check AI correctness
   const getAIResponseForRound = async (round: number) => {
     if (!competition.competitionId) return;
     
     try {
       console.log(`Getting AI response for round ${round}`);
       
-      // Send request to backend to generate AI response for this round
+      // Step 1: Send request to backend to generate and store AI response for this round
       const aiResponse = await apiClient.getAIResponse({
         competition_id: competition.competitionId,
+        round: round, // ADD THIS - Include the round field
         question: competition.questions[round - 1]?.question || '',
         schema_ddl: competition.schema_ddl,
         difficulty: competition.difficulty,
@@ -287,145 +513,52 @@ export const CompetitionPage: React.FC = () => {
       });
       
       if (aiResponse.data) {
-        console.log(`AI response received for round ${round}:`, aiResponse.data);
+        console.log(`AI response generated and stored for round ${round}`);
         
-        // Store AI response for this round
-        setCompetition(prev => ({
-          ...prev,
-          aiResponses: {
-            ...prev.aiResponses,
-            [round]: aiResponse.data!.answer
+        // Step 2: Wait a moment for the backend to process, then fetch the stored AI response
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Step 3: Fetch the stored AI response for this round
+        const storedAIResponse = await apiClient.getStoredAIResponse(
+          competition.competitionId,
+          round
+        );
+        
+        if (storedAIResponse.data) {
+          console.log(`Stored AI response fetched for round ${round}:`, storedAIResponse.data);
+          
+          // Step 4: Now check if the AI response is correct using the stored data
+          const aiCheck = await apiClient.checkAIResponse({
+            competition_id: competition.competitionId,
+            question: competition.questions[round - 1]?.question || '',
+            sql: '', // Backend will get stored AI SQL from DB
+            difficulty: competition.difficulty,
+            round: round,
+            time_limit: 30,
+            response_time: storedAIResponse.data.ai_response_time || 0
+          });
+
+          if (aiCheck.data) {
+            console.log(`AI check completed for round ${round}:`, aiCheck.data);
+            // Store AI check result
+            setCompetition(prev => ({
+              ...prev,
+              aiCheckResults: {
+                ...prev.aiCheckResults,
+                [round]: aiCheck.data
+              }
+            }));
+          } else {
+            console.error(`AI check failed for round ${round}:`, aiCheck.error);
           }
-        }));
+        } else {
+          console.error(`Failed to fetch stored AI response for round ${round}:`, storedAIResponse.error);
+        }
       } else {
-        console.error(`Failed to get AI response for round ${round}:`, aiResponse.error);
+        console.error(`Failed to generate AI response for round ${round}:`, aiResponse.error);
       }
     } catch (error) {
       console.error(`Error getting AI response for round ${round}:`, error);
-    }
-  };
-
-  // Update handleSubmitAnswer to use the new flow
-  const handleSubmitAnswer = async (timeExpired: boolean = false) => {
-    if (!competition.competitionId || !competition.user_query.trim()) {
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // Step 1: Get stored AI response for this round
-      const storedAIResponse = await getStoredAIResponse(competition.current_round);
-      
-      if (!storedAIResponse) {
-        console.error('No stored AI response found for this round');
-        return;
-      }
-
-      // Step 4: Check human response
-      const humanCheck = await apiClient.checkHumanResponse({
-        competition_id: competition.competitionId!,
-        question: competition.current_question,
-        sql: competition.user_query,
-        difficulty: competition.difficulty,
-        round: competition.current_round,
-        time_limit: 180,
-        response_time: 180 - competition.time_remaining
-      });
-
-      if (!humanCheck.data) {
-        console.error('Human check failed:', humanCheck.error);
-        setIsLoading(false);
-        return;
-      }
-
-      // Step 5: Check AI response using stored AI response
-      const aiCheck = await apiClient.checkAIResponse({
-        competition_id: competition.competitionId!,
-        question: competition.current_question,
-        sql: storedAIResponse.ai_sql,
-        difficulty: competition.difficulty,
-        round: competition.current_round,
-        time_limit: 30,
-        response_time: storedAIResponse.ai_response_time
-      });
-
-      if (!aiCheck.data) {
-        console.error('AI check failed:', aiCheck.error);
-        setIsLoading(false);
-        return;
-      }
-
-      // Step 6: Get round result - FIX THIS CALL
-      const roundResult = await apiClient.getRoundResult({
-        competition_id: competition.competitionId!,
-        round: competition.current_round,
-        question: competition.current_question,
-        human_explanation: humanCheck.data.explanation,
-        ai_explanation: aiCheck.data.explanation,
-        human_sql: competition.user_query,
-        ai_sql: storedAIResponse.ai_sql,
-        human_iscorrect: humanCheck.data.is_correct,
-        ai_iscorrect: aiCheck.data.is_correct
-      });
-
-      if (!roundResult.data) {
-        console.error('Round result failed:', roundResult.error);
-        setIsLoading(false);
-        return;
-      }
-
-      // Store the data in variables to avoid TypeScript errors
-      const humanData = humanCheck.data;
-      const aiData = aiCheck.data;
-      const roundData = roundResult.data;
-
-      // Update competition state with results
-      setCompetition(prev => ({
-        ...prev,
-        rounds_data: [
-          ...prev.rounds_data,
-          {
-            round: competition.current_round,
-            question: competition.current_question,
-            user_query: competition.user_query,
-            ai_query: storedAIResponse.ai_sql,
-            user_correct: humanData.is_correct,
-            ai_correct: aiData.is_correct,
-            user_time: 180 - competition.time_remaining,
-            ai_time: storedAIResponse.ai_response_time,
-            explanation: roundData.explanation,
-            correct_answer: ''
-          }
-        ],
-        user_score: prev.user_score + (humanData.is_correct ? 1 : 0),
-        ai_score: prev.ai_score + (aiData.is_correct ? 1 : 0)
-      }));
-
-      // Move to next round or end competition
-      if (competition.current_round < 5) {
-        setCompetition(prev => ({
-          ...prev,
-          current_round: prev.current_round + 1,
-          current_question: competition.questions[competition.current_round]?.question || '',
-          user_query: '',
-          time_remaining: 180
-        }));
-        
-        // Get AI response for next round
-        // getAIResponseForRound(competition.current_round + 1); // This function is not defined
-      } else {
-        // Competition completed
-        setCompetition(prev => ({
-          ...prev,
-          status: 'completed'
-        }));
-      }
-
-    } catch (error) {
-      console.error('Error submitting answer:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -497,6 +630,55 @@ export const CompetitionPage: React.FC = () => {
     return 'It\'s a tie! Great match!';
   };
 
+  // Add certificate generation function
+  const handleGetCertificate = async () => {
+    if (!competition.competitionId) return;
+    
+    try {
+      console.log('Generating certificate for competition:', competition.competitionId);
+      
+      // Call the certificate generation endpoint
+      const certificateResponse = await apiClient.generateCompetitionCertificate({
+        competition_id: competition.competitionId,
+        user_score: competition.user_score,
+        ai_score: competition.ai_score,
+        difficulty: competition.difficulty,
+        total_rounds: competition.total_rounds
+      });
+      
+      if (certificateResponse.data) {
+        console.log('Certificate generated successfully:', certificateResponse.data);
+        
+        // If the certificate has a download URL, open it
+        if (certificateResponse.data.download_url) {
+          window.open(certificateResponse.data.download_url, '_blank');
+        } else if (certificateResponse.data.certificate_data) {
+          // If we have certificate data, trigger download
+          const blob = new Blob([certificateResponse.data.certificate_data], { type: 'application/pdf' });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `SQL_Competition_Certificate_${competition.competitionId}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }
+        
+        // Show success message
+        alert('Certificate generated successfully!');
+        
+      } else {
+        console.error('Failed to generate certificate:', certificateResponse.error);
+        alert('Failed to generate certificate. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Error generating certificate:', error);
+      alert('Error generating certificate. Please try again.');
+    }
+  };
+
   if (showResults) {
     return (
       <div className="max-w-6xl mx-auto p-6">
@@ -553,8 +735,8 @@ export const CompetitionPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Certificate or Upgrade */}
-        {competition.can_get_certificate ? (
+        {/* Certificate or Upgrade - Fixed premium check */}
+        {isPremiumUser() ? (
           <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-6 mb-8">
             <div className="flex items-center space-x-4">
               <Award className="h-8 w-8 text-yellow-600" />
@@ -562,9 +744,13 @@ export const CompetitionPage: React.FC = () => {
                 <h3 className="text-lg font-semibold text-yellow-800">Congratulations!</h3>
                 <p className="text-yellow-700">You've earned a competition certificate!</p>
               </div>
-              <Button className="ml-auto">
+              <Button 
+                onClick={handleGetCertificate}
+                className="ml-auto"
+                disabled={isLoading}
+              >
                 <Award className="h-4 w-4 mr-2" />
-                Get Certificate
+                {isLoading ? 'Generating...' : 'Get Certificate'}
               </Button>
             </div>
           </div>
@@ -574,7 +760,7 @@ export const CompetitionPage: React.FC = () => {
               <Crown className="h-8 w-8 text-blue-600" />
               <div>
                 <h3 className="text-lg font-semibold text-blue-800">Upgrade to Get Certificates</h3>
-                <p className="text-blue-700">Premium users get certificates for their achievements!</p>
+                <p className="text-yellow-700">Premium users get certificates for their achievements!</p>
               </div>
               <Button 
                 onClick={() => showUpgradeModal('certificates', subscription?.plan?.name || 'free')}
@@ -770,13 +956,13 @@ export const CompetitionPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Schema Display */}
+          {/* Schema Display - Simple like practice mode */}
           {competition.schema_ddl && parsedTables.length > 0 && (
-            <div className="mb-8">
+            <div className="mb-6">
               <DatabaseSchemaDiagram
                 schema={{
                   tables: parsedTables,
-                  relationships: [] // You can enhance this later
+                  relationships: []
                 }}
                 className=""
               />
@@ -784,128 +970,149 @@ export const CompetitionPage: React.FC = () => {
           )}
 
           {/* Current Question Display */}
-          <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-8">
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-2 flex items-center">
-                <Target className="h-5 w-5 mr-2" />
-                Current Question ({competition.current_round} of {competition.total_rounds})
-              </h3>
-              <p className="text-secondary-700 bg-secondary-50 p-4 rounded-lg text-lg">
-                {competition.current_question || 'No question available'}
-              </p>
-            </div>
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h3 className="text-lg font-semibold mb-4">Question {competition.current_round}/5</h3>
+            <p className="text-gray-700 mb-4">{competition.current_question}</p>
             
-            {/* Question and Answer */}
+            {/* Update the SQL input area to be larger and better styled */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-secondary-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Your SQL Query
               </label>
               <Textarea
                 value={competition.user_query}
                 onChange={(e) => setCompetition(prev => ({ ...prev, user_query: e.target.value }))}
-                placeholder="Enter your SQL query here..."
-                rows={8}
-                className="font-mono"
+                placeholder="Write your SQL query here..."
+                className="w-full h-80 font-mono text-sm bg-gray-50 border-gray-300 focus:border-blue-500 focus:ring-blue-500 resize-none" // Much larger height and proper SQL styling
               />
             </div>
-
-            <div className="flex justify-between items-center">
-              <div className="text-sm text-secondary-600">
-                Time remaining: {formatTime(competition.time_remaining)}
-              </div>
-              <Button 
+            
+            <div className="flex gap-3">
+              <Button
                 onClick={() => handleSubmitAnswer()}
                 disabled={isLoading || !competition.user_query.trim()}
+                className="flex-1"
+                size="lg"
+                variant="primary"
               >
-                {isLoading ? (
-                  'Submitting...'
-                ) : (
-                  <>
-                    <Send className="h-4 w-4 mr-2" />
-                    Submit Answer
-                  </>
-                )}
+                {isLoading ? 'Submitting...' : 'Submit Answer'}
               </Button>
+              
+              {/* Next Round Button - Shows after submission, next to Submit button */}
+              {showRoundResult && competition.current_round < 5 && (
+                <Button
+                  onClick={moveToNextRound}
+                  className="flex-1"
+                  size="lg"
+                  variant="secondary"
+                >
+                  Next Round ({competition.current_round + 1}/5)
+                </Button>
+              )}
+              
+              {/* Final Results Button - Shows after last round */}
+              {showRoundResult && competition.current_round === 5 && (
+                <Button
+                  onClick={() => setShowResults(true)}
+                  className="flex-1"
+                  size="lg"
+                  variant="primary"
+                >
+                  View Final Results
+                </Button>
+              )}
             </div>
           </div>
 
-          {/* Query Results Display */}
-          {competition.rounds_data.length > 0 && competition.rounds_data[competition.rounds_data.length - 1] && (
-            <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Table className="h-5 w-5 mr-2" />
-                Query Results
-              </h3>
-              
-              {/* Show the latest round results */}
-              {(() => {
-                const latestRound = competition.rounds_data[competition.rounds_data.length - 1];
-                return (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* User Query Result */}
-                      <div className={`p-4 rounded-lg border-2 ${latestRound.user_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
-                        <h4 className="font-semibold mb-2 flex items-center">
-                          {latestRound.user_correct ? (
-                            <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
-                          ) : (
-                            <X className="h-4 w-4 mr-1 text-red-600" />
-                          )}
-                          Your Query
-                        </h4>
-                        <pre className="text-sm bg-white p-2 rounded border">
-                          {latestRound.user_query}
-                        </pre>
-                        {/* Here you would show the actual query results when available */}
-                        <TableDataViewer 
-                          tables={latestRound.user_query_results || []} 
-                          className="mt-2" 
-                        />
-                      </div>
-
-                      {/* AI Query Result */}
-                      <div className={`p-4 rounded-lg border-2 ${latestRound.ai_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
-                        <h4 className="font-semibold mb-2 flex items-center">
-                          {latestRound.ai_correct ? (
-                            <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
-                          ) : (
-                            <X className="h-4 w-4 mr-1 text-red-600" />
-                          )}
-                          AI Query
-                        </h4>
-                        <pre className="text-sm bg-white p-2 rounded border">
-                          {latestRound.ai_query}
-                        </pre>
-                        {/* Here you would show the actual AI query results when available */}
-                        <TableDataViewer 
-                          tables={latestRound.ai_query_results || []} 
-                          className="mt-2" 
-                        />
-                      </div>
+          {/* Round Result Display - Shows after submission */}
+          {showRoundResult && currentRoundResult && (
+            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <div className="text-center mb-4">
+                <h3 className="text-xl font-bold text-gray-800 mb-2">
+                  Round {currentRoundResult.round} Results
+                </h3>
+                
+                {/* Winner Display */}
+                <div className="mb-4">
+                  {currentRoundResult.winner === 'human' && (
+                    <div className="text-green-600 text-lg font-semibold">
+                       You won this round! 🎉
                     </div>
+                  )}
+                  {currentRoundResult.winner === 'ai' && (
+                    <div className="text-red-600 text-lg font-semibold">
+                       AI won this round
+                    </div>
+                  )}
+                  {currentRoundResult.winner === 'both' && (
+                    <div className="text-blue-600 text-lg font-semibold">
+                      🤝 It's a tie! Both got it right
+                    </div>
+                  )}
+                  {currentRoundResult.winner === 'none' && (
+                    <div className="text-yellow-600 text-lg font-semibold">
+                      ⚠️ Both got it wrong
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                    {/* Explanation */}
-                    {latestRound.explanation && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h4 className="font-semibold mb-2 text-blue-800">Explanation</h4>
-                        <p className="text-blue-700">{latestRound.explanation}</p>
-                      </div>
-                    )}
-
-                    {/* Correct Answer */}
-                    {latestRound.correct_answer && !latestRound.user_correct && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <h4 className="font-semibold mb-2 text-green-800">Correct Answer</h4>
-                        <pre className="text-sm bg-white p-2 rounded border text-green-700">
-                          {latestRound.correct_answer}
-                        </pre>
-                      </div>
-                    )}
+              {/* Results Summary with Symbols */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-gray-700 mb-2">Your Query</h4>
+                  <div className={`p-3 rounded border ${currentRoundResult.human_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <code className="text-sm font-mono text-gray-800">{currentRoundResult.human_sql}</code>
                   </div>
-                );
-              })()}
+                  <div className={`mt-2 text-sm font-medium ${currentRoundResult.human_correct ? 'text-green-600' : 'text-red-600'}`}>
+                    {currentRoundResult.human_correct ? '✅ Correct' : '❌ Incorrect'}
+                  </div>
+                </div>
+                
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h4 className="font-semibold text-gray-700 mb-2">AI Query</h4>
+                  <div className={`p-3 rounded border ${currentRoundResult.ai_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    <code className="text-sm font-mono text-gray-800">{currentRoundResult.ai_sql}</code>
+                  </div>
+                  <div className={`mt-2 text-sm font-medium ${currentRoundResult.ai_correct ? 'text-green-600' : 'text-red-600'}`}>
+                    {currentRoundResult.ai_correct ? '✅ Correct' : '❌ Incorrect'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Explanation */}
+              <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                <h4 className="font-semibold text-blue-800 mb-2">Explanation</h4>
+                <p className="text-blue-700 text-sm">{currentRoundResult.explanation}</p>
+              </div>
             </div>
           )}
+
+          {/* Query Results Display */}
+          {/* Remove this entire Query Results section */}
+          {/*
+          {competition.user_query && (
+            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4">Query Results</h3>
+              
+              <div className="mb-4">
+                <h4 className="font-medium text-gray-700 mb-2">Your Query</h4>
+                <div className="bg-gray-100 p-3 rounded">
+                  <code className="text-sm">{competition.user_query}</code>
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <h4 className="font-medium text-gray-700 mb-2">AI Query</h4>
+                <div className="bg-gray-100 p-3 rounded">
+                  <code className="text-sm">
+                    {competition.aiResponses[competition.current_round] || 'AI response not ready yet'}
+                  </code>
+                </div>
+              </div>
+            </div>
+          )}
+          */}
         </div>
       )}
 

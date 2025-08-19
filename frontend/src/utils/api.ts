@@ -265,6 +265,7 @@ export interface RoundResultRequest {
   ai_sql: string;
   human_iscorrect: boolean;
   ai_iscorrect: boolean;
+  difficulty:string;
 }
 
 export interface RoundResultResponse {
@@ -281,6 +282,7 @@ export interface RoundResultResponse {
 
 export interface AICompetitionRequest {
   competition_id: string;
+  round: number; // ADD THIS - Include the round field
   question: string;
   schema_ddl: string;
   difficulty: string;
@@ -289,6 +291,7 @@ export interface AICompetitionRequest {
 
 export interface AICompetitionResponse {
   competition_id: string;
+  round: number; // ADD THIS - Include the round field
   answer: string;
   difficulty: string;
   in_time: boolean;
@@ -632,6 +635,26 @@ class APIClient {
 
   async getStoredAIResponse(competitionId: string, round: number): Promise<{ data?: any; error?: string }> {
     return this.request(`/api/competition/ai-response/${competitionId}/${round}`);
+  }
+
+  async incrementCompetitionUsage(competitionId: string): Promise<{ data?: any; error?: string }> {
+    return this.request(`/api/competition/${competitionId}/complete`, {
+      method: 'POST',
+    });
+  }
+
+  // Add this method to the APIClient class
+  async generateCompetitionCertificate(data: {
+    competition_id: string;
+    user_score: number;
+    ai_score: number;
+    difficulty: string;
+    total_rounds: number;
+  }): Promise<{ data?: any; error?: string }> {
+    return this.request('/api/achievements/competition-certificate', { // Updated endpoint path
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 

@@ -661,3 +661,35 @@ async def get_competition_stats(
         "total_score": total_score,
         "average_score": total_score / total_competitions if total_competitions > 0 else 0
     }
+
+
+@router.post("/{competition_id}/complete")
+async def complete_competition(
+    competition_id: str,
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark competition as completed and update user usage."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Verify the competition belongs to the current user
+    competition = db.query(Competition).filter(
+        Competition.id == competition_id,
+        Competition.user_id == current_user.id
+    ).first()
+    
+    if not competition:
+        raise HTTPException(status_code=404, detail="Competition not found")
+    
+    # Update competition status to completed
+    competition.status = 'completed'
+    competition.completed_at = datetime.utcnow()
+    
+    # Increment user's competition usage
+    subscription_service = SubscriptionService(db)
+    subscription_service.increment_usage(current_user.id, "competition")
+    
+    db.commit()
+    
+    return {"message": "Competition completed successfully"}
