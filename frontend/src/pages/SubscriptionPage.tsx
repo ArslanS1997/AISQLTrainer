@@ -8,8 +8,9 @@ import { useSubscription } from '../contexts/SubscriptionContext';
 
 export const SubscriptionPage: React.FC = () => {
   const { user } = useAuth();
-  const { subscription, loading, error } = useSubscription();
+  const { subscription, loading, error, refetchSubscription } = useSubscription();
   const currentPlan = subscription?.plan?.name || 'free';
+  const [canceling, setCanceling] = useState(false);
 
   const getPlanDisplayName = (planObj?: SubscriptionPlan | string) => {
     let planName: string;
@@ -59,6 +60,29 @@ export const SubscriptionPage: React.FC = () => {
       </div>
     );
   }
+
+  const handleCancelSubscription = async () => {
+    if (!window.confirm('Are you sure you want to cancel your subscription? You\'ll continue to have access until the end of your current billing period.')) {
+      return;
+    }
+
+    setCanceling(true);
+    try {
+      const response = await apiClient.cancelSubscription();
+      if (response.data?.success) {
+        alert(response.data.message);
+        // Refresh subscription data
+        await refetchSubscription();
+      } else {
+        alert('Failed to cancel subscription');
+      }
+    } catch (error) {
+      console.error('Cancel subscription error:', error);
+      alert('Failed to cancel subscription. Please try again.');
+    } finally {
+      setCanceling(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -261,8 +285,10 @@ export const SubscriptionPage: React.FC = () => {
                   <Button 
                     variant="outline"
                     className="text-red-600 border-red-300 hover:bg-red-50"
+                    onClick={handleCancelSubscription}
+                    disabled={canceling}
                   >
-                    Cancel Subscription
+                    {canceling ? 'Canceling...' : 'Cancel Subscription'}
                   </Button>
                 </>
               )}
