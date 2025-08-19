@@ -23,8 +23,8 @@ PLAN_CONFIGS = {
         'name': 'pro',
         'display_name': 'Pro Plan',
         'limits': {
-            'max_schemas_per_month': 15,
-            'max_competitions_per_month': 15
+            'max_schemas_per_month': 20,  # Updated from 15 to 20
+            'max_competitions_per_month': 20  # Updated from 15 to 20
         },
         'features': {
             'can_download_certificates': True,

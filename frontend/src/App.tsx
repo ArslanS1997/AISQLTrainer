@@ -107,6 +107,7 @@ const AppRoutes: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/payment-success" element={<PaymentSuccessPage />} />
         <Route path="/subscription/success" element={<PaymentSuccessPage />} />
         <Route path="/payment-failure" element={<PaymentFailurePage />} />
       </Routes>
