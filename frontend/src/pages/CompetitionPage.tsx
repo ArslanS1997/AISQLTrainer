@@ -68,6 +68,7 @@ interface CompetitionState {
   rounds_data: CompetitionRound[];
   can_get_certificate?: boolean;
   expires_at?: Date | null;
+  aiResponses: { [key: number]: string }; // Add this for AI responses
 }
 
 const DIFFICULTY_OPTIONS = [
@@ -137,19 +138,20 @@ export const CompetitionPage: React.FC = () => {
     competitionId: null,
     difficulty: 'basic',
     schema_ddl: '',
-    questions: [],  // ADD THIS
+    questions: [],
     total_rounds: 5,
     current_round: 1,
     user_score: 0,
     ai_score: 0,
-    time_remaining: 180, // 3 minutes total
+    time_remaining: 180,
     status: 'setup',
     result: null,
     current_question: '',
     user_query: '',
     rounds_data: [],
     can_get_certificate: false,
-    expires_at: null
+    expires_at: null,
+    aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
   });
 
   // Timer countdown
@@ -163,7 +165,7 @@ export const CompetitionPage: React.FC = () => {
           
           if (newTimeRemaining <= 0) {
             // Time's up - auto submit current query
-            handleSubmitAnswer(true);
+            handleSubmitAnswer();
             return { ...prev, time_remaining: 0, status: 'expired' };
           }
           
@@ -191,30 +193,27 @@ export const CompetitionPage: React.FC = () => {
       });
       
       if (response.data) {
-        console.log('Full response data:', response.data); // Debug the entire response
-        console.log('Questions received:', response.data.questions); // Debug questions specifically
+        console.log('Full response data:', response.data);
+        console.log('Questions received:', response.data.questions);
         
-        // Parse the schema DDL into structured tables
-        const tables = parseSchemaToTables(response.data.schema_ddl);
-        setParsedTables(tables);
-        
-        // Handle questions whether they're strings or objects
-        const questions = response.data.questions || [];
-        const firstQuestion = Array.isArray(questions) && questions.length > 0 
-          ? (typeof questions[0] === 'string' ? questions[0] : questions[0].question || '')
-          : 'No question available';
+        // For now, initialize AI responses as empty strings
+        // You'll need to implement AI response generation later
+        const aiResponses = {
+          1: '', 2: '', 3: '', 4: '', 5: ''
+        };
         
         setCompetition(prev => ({
           ...prev,
           competitionId: response.data!.competition_id,
           difficulty: response.data!.difficulty,
           schema_ddl: response.data!.schema_ddl,
-          questions: questions,
+          questions: response.data!.questions || [],
           total_rounds: response.data!.total_rounds || 5,
           current_round: 1,
           time_remaining: response.data!.time_limit || 180,
           status: 'active',
-          current_question: firstQuestion
+          current_question: response.data!.questions?.[0]?.question || 'No question available',
+          aiResponses: aiResponses
         }));
       }
     } catch (error: any) {
@@ -258,50 +257,57 @@ export const CompetitionPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await apiClient.submitCompetitionAnswer({
-        competition_id: competition.competitionId,
+      // 1. Check human response
+      const humanCheck = await apiClient.checkHumanResponse({
+        competition_id: competition.competitionId!,
+        question: competition.current_question,
+        sql: competition.user_query,
+        difficulty: competition.difficulty,
         round: competition.current_round,
-        user_query: competition.user_query
+        time_limit: 180,
+        response_time: 180 - competition.time_remaining
       });
-      
-      if (response.data) {
-        const roundData: CompetitionRound = {
-          round: competition.current_round,
-          question: competition.current_question,
-          user_query: competition.user_query,
-          ai_query: response.data.ai_query || '',
-          user_correct: response.data.user_correct,
-          ai_correct: response.data.ai_correct,
-          user_time: 0, // Will be calculated from time remaining
-          ai_time: 30, // AI gets 30 seconds
-          explanation: response.data.explanation,
-          correct_answer: response.data.correct_answer,
-          user_query_results: response.data.user_query_results || [], // Add actual results
-          ai_query_results: response.data.ai_query_results || []       // Add actual results
-        };
 
+      // 2. For now, use placeholder AI response - you need to implement this
+      const aiCheck = await apiClient.checkAIResponse({
+        competition_id: competition.competitionId!,
+        question: competition.current_question,
+        sql: "SELECT * FROM table", // Placeholder - replace with actual AI SQL
+        difficulty: competition.difficulty,
+        round: competition.current_round,
+        time_limit: 30,
+        response_time: 30 // Placeholder - replace with actual AI response time
+      });
+
+      // 3. Get round result
+      const roundResult = await apiClient.getRoundResult({
+        competition_id: competition.competitionId!,
+        round: competition.current_round
+      });
+
+      // 4. Check if this was the last round
+      if (competition.current_round === 5) {
+        // Competition is complete - get final result
+        const finalResult = await apiClient.getCompetitionResult({
+          competition_id: competition.competitionId!
+        });
+        
         setCompetition(prev => ({
           ...prev,
-          user_score: response.data!.user_points || prev.user_score,
-          ai_score: response.data!.ai_points || prev.ai_score,
-          rounds_data: [...prev.rounds_data, roundData],
+          status: 'completed',
+          result: finalResult.data?.final_result || null // Fix the type issue
+        }));
+        
+        setShowResults(true)
+      } else {
+        // Move to next round
+        setCompetition(prev => ({
+          ...prev,
+          current_round: prev.current_round + 1,
           user_query: ''
         }));
-
-        // Show explanation if user was wrong
-        if (!response.data.user_correct) {
-          setCurrentExplanation(response.data.explanation);
-          setShowExplanation(true);
-        }
-
-        // Check if competition is finished
-        if (response.data.competition_completed) {
-          await getCompetitionResult();
-        } else if (response.data.next_round) {
-          // Get next question
-          await getNextQuestion(competition.competitionId!, response.data.next_round);
-        }
       }
+
     } catch (error) {
       console.error('Failed to submit answer:', error);
     } finally {
@@ -351,7 +357,8 @@ export const CompetitionPage: React.FC = () => {
       user_query: '',
       rounds_data: [],
       can_get_certificate: false,
-      expires_at: null
+      expires_at: null,
+      aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
     });
     setShowResults(false);
     setShowExplanation(false);

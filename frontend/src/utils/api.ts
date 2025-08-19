@@ -141,8 +141,12 @@ export interface CompetitionQuestionResponse {
 
 export interface CompetitionSubmitRequest {
   competition_id: string;
-  round: number;
-  user_query: string;
+  question: string;        // Add this
+  sql: string;            // Change from user_query to sql
+  difficulty: string;     // Add this
+  round: number;          // Keep this
+  time_limit: number;     // Add this
+  response_time: number;  // Add this
 }
 
 export interface CompetitionSubmitResponse {
@@ -216,6 +220,54 @@ export interface PlanChangePreview {
   proration_amount: number;
   next_billing_amount: number;
   message: string;
+}
+
+// Add these interfaces after the existing ones
+export interface HumanCheckRequest {
+  competition_id: string;
+  question: string;
+  sql: string;
+  difficulty: string;
+  round: number;
+  time_limit: number;
+  response_time: number;
+}
+
+export interface HumanCheckResponse {
+  is_correct: boolean;
+  explanation: string;
+  points: number;
+}
+
+export interface AICheckRequest {
+  competition_id: string;
+  question: string;
+  sql: string;
+  difficulty: string;
+  round: number;
+  time_limit: number;
+  response_time: number;
+}
+
+export interface AICheckResponse {
+  is_correct: boolean;
+  explanation: string;
+  points: number;
+}
+
+export interface RoundResultRequest {
+  competition_id: string;
+  round: number;
+}
+
+export interface RoundResultResponse {
+  round: number;
+  human_correct: boolean;
+  ai_correct: boolean;
+  human_points: number;
+  ai_points: number;
+  winner: 'human' | 'ai' | 'tie';
+  explanation: string;
 }
 
 // API Client
@@ -520,6 +572,30 @@ class APIClient {
 
   async getSubscriptionStatus(): Promise<{ data?: any; error?: string }> {
     return this.request('/api/stripe/subscription-status');
+  }
+
+  // Check human response
+  async checkHumanResponse(data: HumanCheckRequest): Promise<{ data?: HumanCheckResponse; error?: string }> {
+    return this.request('/api/competition/human-iscorrect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Check AI response  
+  async checkAIResponse(data: AICheckRequest): Promise<{ data?: AICheckResponse; error?: string }> {
+    return this.request('/api/competition/ai-iscorrect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Get round result (after both are checked)
+  async getRoundResult(data: RoundResultRequest): Promise<{ data?: RoundResultResponse; error?: string }> {
+    return this.request('/api/competition/round-result', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 
