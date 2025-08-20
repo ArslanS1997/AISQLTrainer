@@ -333,22 +333,21 @@ export const MainPage: React.FC = () => {
           tableHeader: table_head,
         },
       }));
+
+      // Check if this was the last question and complete the session
+      if (currentQuestionIndex === questions.length - 1) {
+        console.log('🎯 Last question answered, completing session...');
+        if (currentSession?.id) {
+          try {
+            await completeSession(currentSession.id);
+            console.log('✅ Session completed successfully');
+          } catch (error) {
+            console.error('❌ Failed to complete session:', error);
+          }
+        }
+      }
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const nextQuestion = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setCurrentAnswer('');
-    } else {
-      // Session completed - mark it as completed
-      if (currentSession?.id) {
-        completeSession(currentSession.id);
-      }
-      // Show completion message or redirect
-      alert('Congratulations! You have completed this practice session!');
     }
   };
 
@@ -806,16 +805,49 @@ const getSessionProgress = () => {
                 </div>
 
                 {answerResults[currentQuestionIndex] && currentQuestionIndex < questions.length - 1 && (
-                  <Button onClick={nextQuestion}>Next Question</Button>
+                  <Button onClick={() => setCurrentQuestionIndex(currentQuestionIndex + 1)}>
+                    Next Question
+                  </Button>
                 )}
                 {answerResults[currentQuestionIndex] && currentQuestionIndex === questions.length - 1 && (
                   <div className="flex flex-col items-center space-y-4">
                     {/* Check if user has a paid plan - default to free if no subscription found */}
                     {subscription?.plan?.name && subscription.plan.name !== 'free' ? (
                       <Button 
-                        onClick={() => {
+                        onClick={async () => {
+                          // Session is already completed, now generate certificate
                           const totalPoints = Object.values(answerResults).reduce((sum, result) => sum + (result.points || 0), 0);
-                          window.open(`/certificate?points=${totalPoints}&difficulty=${difficulty}`, '_blank');
+                          const correctAnswers = Object.values(answerResults).filter(result => result.isCorrect).length;
+                          const totalQuestions = Object.keys(answerResults).length;
+                          const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+                          
+                          // Generate certificate data
+                          const certificateData = {
+                            id: currentSession?.id,
+                            session_id: currentSession?.id,
+                            title: `${difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} SQL Practice Session`,
+                            difficulty: difficulty,
+                            score: score,
+                            total_points: totalQuestions,
+                            correct_answers: correctAnswers,
+                            completion_date: new Date().toISOString(),
+                            topic: difficulty.charAt(0).toUpperCase() + difficulty.slice(1),
+                            type: 'session',
+                            certificate_url: `/api/achievements/certificate/${currentSession?.id}`
+                          };
+                          
+                          // Store certificate in localStorage for immediate access
+                          const existingCertificates = JSON.parse(localStorage.getItem('userCertificates') || '[]');
+                          existingCertificates.push(certificateData);
+                          localStorage.setItem('userCertificates', JSON.stringify(existingCertificates));
+                          
+                          // Show success message
+                          alert('🎉 Certificate generated successfully! Check your certificates page.');
+                          
+                          // Optionally redirect to certificates page
+                          setTimeout(() => {
+                            window.location.href = '/certificates';
+                          }, 1500);
                         }}
                         className="bg-blue-600 hover:bg-blue-700"
                       >
@@ -825,7 +857,7 @@ const getSessionProgress = () => {
                     ) : (
                       <div className="text-center space-y-3">
                         <p className="text-gray-600">🎉 Great job completing all questions!</p>
-                        <p className="text-sm text-gray-500">Upgrade to Pro or Max to download your certificate</p>
+                        <p className="text-sm text-gray-500">Upgrade to Pro or Max to get your certificate</p>
                         <Button
                           onClick={() => window.location.href = '/pricing'}
                           className="bg-blue-600 hover:bg-blue-700"

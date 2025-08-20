@@ -23,7 +23,6 @@ export const AchievementsPage: React.FC = () => {
     averageScore: 0,
     currentStreak: 0,
     totalCompetitions: 0,
-    bestRank: null as number | null,
     // Add more competition stats
     competitionWins: 0,
     competitionLosses: 0,
@@ -108,7 +107,6 @@ export const AchievementsPage: React.FC = () => {
             averageScore: statsResponse.data.average_score,
             currentStreak: statsResponse.data.current_streak,
             totalCompetitions: statsResponse.data.total_competitions,
-            bestRank: statsResponse.data.best_rank,
           }));
         }
         
@@ -383,12 +381,6 @@ export const AchievementsPage: React.FC = () => {
               <div className="flex justify-between items-center">
                 <span className="text-sm text-secondary-600">Competitions</span>
                 <span className="font-medium text-secondary-900">{stats.totalCompetitions}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-secondary-600">Best Rank</span>
-                <span className="font-medium text-secondary-900">
-                  {stats.bestRank ? `#${stats.bestRank}` : 'Not ranked yet'}
-                </span>
               </div>
             </div>
           </div>

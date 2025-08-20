@@ -540,7 +540,7 @@ class APIClient {
   }
   async completeSession(sessionId: string): Promise<{ data?: any; error?: string }> {
     try {
-      const response = await this.request(`/sql/complete-session?session_id=${sessionId}`, {
+      const response = await this.request(`api/sql/complete-session?session_id=${sessionId}`, {
         method: 'POST'
       });
       return response;
