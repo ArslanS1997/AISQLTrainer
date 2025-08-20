@@ -174,8 +174,8 @@ export interface CompetitionStatusResponse {
   status: string;
   current_round: number;
   total_rounds: number;
-  user_score: number;
-  ai_score: number;
+  user_points: number;
+  ai_points: number;
   time_remaining: number;
   questions: CompetitionQuestion[];  // ADD THIS - Include all questions
   schema_ddl: string;
@@ -188,13 +188,26 @@ export interface CompetitionResultRequest {
 export interface CompetitionResultResponse {
   competition_id: string;
   final_result: string;
-  user_score: number;
-  ai_score: number;
-  rounds_data: any[];
+  user_points: number;  // Backend returns user_points
+  ai_points: number;    // Backend returns ai_points
+  rounds_data: CompetitionRound[];
   can_get_certificate: boolean;
   certificate_message: string;
   schema_ddl: string;
-  questions: CompetitionQuestion[];  // ADD THIS - For review purposes
+  questions: CompetitionQuestion[];
+}
+
+export interface CompetitionRound {
+  round: number;
+  question: string;
+  user_sql: string;     // Backend returns user_sql
+  ai_sql: string;       // Backend returns ai_sql
+  user_correct: boolean;
+  ai_correct: boolean;
+  user_points: number;
+  ai_points: number;
+  correct_answer: string;
+  explanation: string;
 }
 
 export interface ChangePlanRequest {
@@ -564,8 +577,9 @@ class APIClient {
     });
   }
 
+  // Get competition final result
   async getCompetitionResult(data: CompetitionResultRequest): Promise<{ data?: CompetitionResultResponse; error?: string }> {
-    return this.request('/api/competition/result', {
+    return this.request('/api/competition/final-result', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -653,12 +667,12 @@ class APIClient {
   // Add this method to the APIClient class
   async generateCompetitionCertificate(data: {
     competition_id: string;
-    user_score: number;
-    ai_score: number;
+    user_points: number;
+    ai_points: number;
     difficulty: string;
     total_rounds: number;
   }): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/achievements/competition-certificate', { // Updated endpoint path
+    return this.request('/api/achievements/competition-certificates', { // Updated endpoint path
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -667,6 +681,11 @@ class APIClient {
   // Add this method to verify checkout sessions
   async verifyCheckoutSession(sessionId: string): Promise<{ data?: any; error?: string }> {
     return this.request(`/api/stripe/verify-checkout-session/${sessionId}`);
+  }
+
+  // Get competition certificate
+  async getCompetitionCertificate(competitionId: string): Promise<{ data?: any; error?: string }> {
+    return this.request(`/api/achievements/competition-certificate/${competitionId}`);
   }
 }
 

@@ -132,12 +132,13 @@ export const CertificatePage: React.FC = () => {
   };
 
   const downloadCertificate = (cert: CertificateData) => {
-    const link = document.createElement('a');
-    link.href = cert.certificate_url;
-    link.download = `certificate-${cert.session_id || cert.id}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // First open the certificate modal
+    setSelectedCertificate(cert);
+    
+    // Wait a moment for the modal to render, then print
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   const UpgradePrompt: React.FC = () => (
@@ -361,7 +362,7 @@ export const CertificatePage: React.FC = () => {
                         className="flex-1"
                       >
                         <Download className="h-4 w-4 mr-2" />
-                        Download
+                        Download PDF
                       </Button>
                     </div>
                   </div>
@@ -374,7 +375,7 @@ export const CertificatePage: React.FC = () => {
         {/* Certificate Modal */}
         {selectedCertificate && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-lg w-[98vw] max-w-none max-h-[98vh] overflow-y-auto"> {/* Much wider - 98% of viewport */}
               <div className="p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-2xl font-bold">Certificate Preview</h2>
@@ -386,41 +387,44 @@ export const CertificatePage: React.FC = () => {
                   </button>
                 </div>
                 
-                {selectedCertificate.type === 'competition' ? (
-                  // Competition certificate
-                  <Certificate 
-                    type="competition"
-                    competition={{
-                      name: selectedCertificate.title,
-                      date: new Date(selectedCertificate.completion_date).toLocaleDateString(),
-                      certificate_url: selectedCertificate.certificate_url,
-                      result: (selectedCertificate.user_score || 0) > (selectedCertificate.ai_score || 0) ? 'win' : 
-                              (selectedCertificate.user_score || 0) < (selectedCertificate.ai_score || 0) ? 'lose' : 'tie',
-                      user_score: selectedCertificate.user_score || 0,
-                      ai_score: selectedCertificate.ai_score || 0,
-                      difficulty: selectedCertificate.difficulty.toLowerCase()
-                    }}
-                    userName={`${user?.name || 'User'} (${user?.email || 'user@example.com'})`}
-                    session={undefined}
-                    master={undefined}
-                  />
-                ) : (
-                  // Practice session certificate
-                  <Certificate 
-                    type="session"
-                    userName={user?.name || 'Student'}
-                    session={{
-                      session_id: selectedCertificate.session_id || '',
-                      title: selectedCertificate.title,
-                      difficulty: selectedCertificate.difficulty,
-                      score: selectedCertificate.score || 0,
-                      total_points: selectedCertificate.total_points || 0,
-                      completion_date: selectedCertificate.completion_date,
-                      topic: selectedCertificate.topic,
-                      certificate_url: selectedCertificate.certificate_url
-                    }}
-                  />
-                )}
+                {/* Certificate content - ensure it takes full width */}
+                <div className="w-full">
+                  {selectedCertificate.type === 'competition' ? (
+                    // Competition certificate
+                    <Certificate 
+                      type="competition"
+                      competition={{
+                        name: selectedCertificate.title,
+                        date: new Date(selectedCertificate.completion_date).toLocaleDateString(),
+                        certificate_url: selectedCertificate.certificate_url,
+                        result: (selectedCertificate.user_score || 0) > (selectedCertificate.ai_score || 0) ? 'win' : 
+                                (selectedCertificate.user_score || 0) < (selectedCertificate.ai_score || 0) ? 'lose' : 'tie',
+                        user_score: selectedCertificate.user_score || 0,
+                        ai_score: selectedCertificate.ai_score || 0,
+                        difficulty: selectedCertificate.difficulty.toLowerCase()
+                      }}
+                      userName={`${user?.name || 'User'})`}
+                      session={undefined}
+                      master={undefined}
+                    />
+                  ) : (
+                    // Practice session certificate
+                    <Certificate 
+                      type="session"
+                      userName={user?.name || 'Student'}
+                      session={{
+                        session_id: selectedCertificate.session_id || '',
+                        title: selectedCertificate.title,
+                        difficulty: selectedCertificate.difficulty,
+                        score: selectedCertificate.score || 0,
+                        total_points: selectedCertificate.total_points || 0,
+                        completion_date: selectedCertificate.completion_date,
+                        topic: selectedCertificate.topic,
+                        certificate_url: selectedCertificate.certificate_url
+                      }}
+                    />
+                  )}
+                </div>
                 
                 <div className="mt-6 flex justify-end space-x-3">
                   <Button

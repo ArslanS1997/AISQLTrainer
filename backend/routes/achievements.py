@@ -556,3 +556,74 @@ async def get_certificate(
     }
     
     return certificate_data
+
+@router.get("/competition-certificate/{competition_id}")
+async def get_competition_certificate(
+    competition_id: str,
+    db=Depends(get_db),
+    current_user: Any = Depends(get_current_user)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Check subscription allows certificate download
+    subscription_service = SubscriptionService(db)
+    feature_check = subscription_service.can_use_feature(current_user.id, "download_certificate")
+
+    if not feature_check["allowed"]:
+        raise HTTPException(
+            status_code=403, 
+            detail=feature_check["reason"]
+        )
+
+    # Get the competition and validate it belongs to the user
+    competition = db.query(Competition).filter(
+        Competition.id == competition_id,
+        Competition.user_id == current_user.id,
+        Competition.status == 'completed'
+    ).first()
+    
+    if not competition:
+        raise HTTPException(status_code=404, detail="Competition not found or not completed")
+    
+    # Calculate competition stats
+    user_score = competition.user_score or 0
+    ai_score = competition.ai_score or 0
+    total_rounds = 5  # Default to 5 rounds
+    
+    # Determine performance rating
+    if user_score >= 4:
+        performance = "Excellent"
+    elif user_score >= 3:
+        performance = "Good"
+    else:
+        performance = "Fair"
+    
+    # Determine win status
+    if user_score > ai_score:
+        win_status = "Winner"
+    elif user_score == ai_score:
+        win_status = "Runner Up"
+    else:
+        win_status = "Participant"
+    
+    # Generate certificate data
+    certificate_data = {
+        "certificate_id": f"COMP_CERT_{competition_id[:8].upper()}",
+        "user_name": current_user.name or current_user.username,
+        "competition_id": competition_id,
+        "difficulty": competition.difficulty.capitalize() if competition.difficulty else "Basic",
+        "user_score": user_score,
+        "ai_score": ai_score,
+        "total_rounds": total_rounds,
+        "rounds_won": user_score,
+        "success_rate": f"{(user_score / total_rounds) * 100:.0f}%",
+        "performance": performance,
+        "win_status": win_status,
+        "completion_date": competition.completed_at.strftime("%B %d, %Y") if competition.completed_at else datetime.utcnow().strftime("%B %d, %Y"),
+        "topic": f"SQL Competition - {competition.difficulty.capitalize() if competition.difficulty else 'Basic'}",
+        "result": "win" if user_score > ai_score else "lose" if user_score < ai_score else "tie"
+    }
+    
+    return certificate_data
+

@@ -227,7 +227,7 @@ export const SubscriptionPage: React.FC = () => {
                     <Trophy className="h-5 w-5 text-yellow-500" />
                     <span className="font-medium">Competitions Entered</span>
                   </div>
-                  <span className="text-sm text-gray-600">dd 
+                  <span className="text-sm text-gray-600">
                     {usage.competitions_entered} / {limits.competitions}
                   </span>
                 </div>

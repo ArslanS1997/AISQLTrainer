@@ -20,7 +20,7 @@ import os
 import faker
 import re
 import dspy
-from routes.auth import get_db, get_model_for_user
+from routes.auth import get_db, get_model_for_user, default_lm
 
 from models.schemas import (
     SQLSchemaRequest, SQLSchemaResponse, SQLExecuteRequest, SQLExecuteResponse,
@@ -171,7 +171,7 @@ async def generate_schema(
         
         
         # Use the model
-        with dspy.context(lm=lm):
+        with dspy.context(lm=default_lm):
             response = await create_schema_agent(user_prompt=request.prompt)
             
         retry = False

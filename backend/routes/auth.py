@@ -143,6 +143,12 @@ async def get_available_models(
         "user_plan": plan_name  # Add this to help frontend know user's plan
     }
 
+claude_3_5_sonnet = dspy.LM('anthropic/claude-3-5-sonnet-20240620',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
+gemini_pro = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
+gpt_5 = dspy.LM(model='openai/gpt-5', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=None, temperature=1, max_completion_tokens=7000)
+
+
+
 def get_model_for_user(user_id: str, db) -> dspy.LM:
     """Get the appropriate model based on user's subscription and their selected model."""
     subscription_service = SubscriptionService(db)
@@ -163,15 +169,16 @@ def get_model_for_user(user_id: str, db) -> dspy.LM:
         # Fallback to free model if API key not found
         model_config = AI_MODELS['free']
         api_key = os.getenv(model_config['api_key_env'])
-    if 'gpt-5' in model_config['name']:
-        return dspy.LM(
-            model=f"{model_config['provider']}/{model_config['name']}", 
-            api_key=api_key,
-            max_tokens=None,
-            max_completion_tokens=model_config['max_tokens'],
-            temperature=1
-        )
+    # Use preloaded model instances instead of reloading
+    name = model_config['name']
+    if name == 'claude-3-5-sonnet-20240620':
+        return claude_3_5_sonnet
+    elif name == 'gemini-2.5-pro':
+        return gemini_pro
+    elif name == 'gpt-5':
+        return gpt_5
     else:
+        # Fallback: load dynamically (should only happen for free model)
         return dspy.LM(
             model=f"{model_config['provider']}/{model_config['name']}", 
             api_key=api_key,
@@ -186,6 +193,11 @@ default_lm = dspy.LM(
     max_tokens=AI_MODELS['free']['max_tokens']
 
 )
+
+
+
+
+
 dspy.settings.configure(lm=default_lm)
 
 async def get_current_user(

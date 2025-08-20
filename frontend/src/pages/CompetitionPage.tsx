@@ -30,20 +30,20 @@ import { apiClient } from '../utils/api';
 import { SchemaCard } from '../components/SchemaCard';
 import { TableData, TableColumn } from '../types';
 import { Certificate } from '../components/certificate';
+import { SQLEditor } from '../components/SQLEditor';
 
+// Update the CompetitionRound interface to match the API response
 interface CompetitionRound {
   round: number;
   question: string;
-  user_query: string;
-  ai_query: string;
+  user_sql: string;     // Changed from user_query to match API
+  ai_sql: string;       // Changed from ai_query to match API
   user_correct: boolean;
   ai_correct: boolean;
-  user_time: number;
-  ai_time: number;
-  explanation: string;
+  user_points: number;
+  ai_points: number;
   correct_answer: string;
-  user_query_results?: any[]; // ADD THIS - Actual query results from user
-  ai_query_results?: any[];   // ADD THIS - Actual query results from AI
+  explanation: string;
 }
 
 interface CompetitionQuestion {
@@ -166,6 +166,23 @@ export const CompetitionPage: React.FC = () => {
     aiResponses: { 1: '', 2: '', 3: '', 4: '', 5: '' }, // Add this
     aiCheckResults: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
   });
+
+  // Add this function inside the component to access competition state
+  const calculateScores = () => {
+    if (!competition.rounds_data || competition.rounds_data.length === 0) {
+      return { userScore: 0, aiScore: 0 };
+    }
+    
+    const userScore = competition.rounds_data.reduce((total: number, round: any) => {
+      return total + (round.user_correct ? 1 : 0);
+    }, 0);
+    
+    const aiScore = competition.rounds_data.reduce((total: number, round: any) => {
+      return total + (round.ai_correct ? 1 : 0);
+    }, 0);
+    
+    return { userScore, aiScore };
+  };
 
   // Timer countdown
   useEffect(() => {
@@ -313,14 +330,14 @@ export const CompetitionPage: React.FC = () => {
           {
             round: competition.current_round,
             question: competition.current_question,
-            user_query: competition.user_query,
-            ai_query: aiSQL,
+            user_sql: competition.user_query,
+            ai_sql: aiSQL,
             user_correct: humanData.is_correct,
             ai_correct: aiData.is_correct,
-            user_time: 180 - competition.time_remaining,
-            ai_time: aiResponseTime,
-            explanation: roundData.explanation,
-            correct_answer: ''
+            user_points: 1, // Assuming 1 point for correct answer
+            ai_points: 0, // Assuming 0 points for incorrect answer
+            correct_answer: '',
+            explanation: roundData.explanation
           }
         ],
         user_score: prev.user_score + (humanData.is_correct ? 1 : 0),
@@ -329,29 +346,11 @@ export const CompetitionPage: React.FC = () => {
       
       // COMPLETE THE FLOW: Handle final round completion or get AI response for next question
       if (competition.current_round === 5) {
-        // FINAL ROUND COMPLETED - Update backend usage and mark competition as completed
-        console.log('Final round completed, updating backend usage...');
+        // FINAL ROUND COMPLETED - Mark as completed automatically
+        console.log('Final round completed, marking competition as completed...');
         
-        try {
-          // Call backend to increment competition usage
-          const usageResponse = await apiClient.incrementCompetitionUsage(competition.competitionId!);
-          if (usageResponse.data) {
-            console.log('Competition usage updated successfully');
-          } else {
-            console.error('Failed to update competition usage:', usageResponse.error);
-          }
-        } catch (error) {
-          console.error('Error updating competition usage:', error);
-        }
-        
-        // Set competition status to completed
-        setCompetition(prev => ({
-          ...prev,
-          status: 'completed'
-        }));
-        
-        // Show final results
-        setShowResults(true);
+        // Set competition status to completed automatically
+        setCompetition(prev => ({ ...prev, status: 'completed' }));
         
       } else {
         // NOT THE FINAL ROUND - Automatically send AI response request for next question
@@ -576,8 +575,8 @@ export const CompetitionPage: React.FC = () => {
           ...prev,
           status: 'completed',
           result: response.data!.final_result,
-          user_score: response.data!.user_score,
-          ai_score: response.data!.ai_score,
+          user_score: response.data!.user_points,  // Map user_points to user_score
+          ai_score: response.data!.ai_points,      // Map ai_points to ai_score
           rounds_data: response.data!.rounds_data,
           can_get_certificate: response.data!.can_get_certificate
         }));
@@ -631,43 +630,157 @@ export const CompetitionPage: React.FC = () => {
     return 'It\'s a tie! Great match!';
   };
 
-  // Add certificate generation function
+  // Add certificate generation function - FIXED to use the new endpoint
   const handleGetCertificate = async () => {
     if (!competition.competitionId) return;
     
     try {
-      console.log('Generating certificate for competition:', competition.competitionId);
+      console.log('Getting certificate for competition:', competition.competitionId);
       
-      // Call the certificate generation endpoint
-      const certificateResponse = await apiClient.generateCompetitionCertificate({
-        competition_id: competition.competitionId,
-        user_score: competition.user_score,
-        ai_score: competition.ai_score,
-        difficulty: competition.difficulty,
-        total_rounds: competition.total_rounds
-      });
+      // Use the new competition certificate endpoint
+      const certificateResponse = await apiClient.getCompetitionCertificate(competition.competitionId);
       
       if (certificateResponse.data) {
-        console.log('Certificate generated successfully:', certificateResponse.data);
+        console.log('Competition certificate retrieved successfully:', certificateResponse.data);
+        
+        // Create certificate data from the response
+        const certData = {
+          id: certificateResponse.data.competition_id,
+          type: 'competition',
+          title: certificateResponse.data.topic,
+          difficulty: certificateResponse.data.difficulty,
+          completion_date: certificateResponse.data.completion_date,
+          topic: certificateResponse.data.topic,
+          certificate_url: '',
+          user_score: certificateResponse.data.user_score,
+          ai_score: certificateResponse.data.ai_score,
+          performance: certificateResponse.data.performance,
+          win_status: certificateResponse.data.win_status
+        };
         
         // Store certificate data in state to display the certificate
-        setCertificateData(certificateResponse.data.certificate_data);
+        setCertificateData(certData);
         setShowCertificate(true);
         
       } else {
-        console.error('Failed to generate certificate:', certificateResponse.error);
-        alert('Failed to generate certificate. Please try again.');
+        console.error('Failed to get competition certificate:', certificateResponse.error);
+        alert('Failed to get certificate. Please try again.');
       }
       
     } catch (error) {
-      console.error('Error generating certificate:', error);
-      alert('Error generating certificate. Please try again.');
+      console.error('Error getting certificate:', error);
+      alert('Error getting certificate. Please try again.');
     }
   };
 
   // Add state for certificate display
   const [certificateData, setCertificateData] = useState<any>(null);
   const [showCertificate, setShowCertificate] = useState(false);
+
+  // Add a function to end the competition after final round review
+  const endCompetition = async () => {
+    if (!competition.competitionId) return;
+    
+    try {
+      console.log('Ending competition and calculating final results...');
+      
+      // Call the final-result endpoint to calculate and store final scores
+      const finalResultResponse = await apiClient.getCompetitionResult({
+        competition_id: competition.competitionId
+      });
+      
+      if (finalResultResponse.data) {
+        console.log('Final results calculated successfully:', finalResultResponse.data);
+        
+        // Update competition state with final results from backend
+        // Use the correct property names from the API response
+        setCompetition(prev => ({
+          ...prev,
+          status: 'completed',
+          result: finalResultResponse.data!.final_result,
+          user_score: finalResultResponse.data!.user_points,  // Map user_points to user_score
+          ai_score: finalResultResponse.data!.ai_points,      // Map ai_points to ai_score
+          rounds_data: finalResultResponse.data!.rounds_data,
+          can_get_certificate: finalResultResponse.data!.can_get_certificate
+        }));
+        
+        // Show final results
+        setShowResults(true);
+        
+      } else {
+        console.error('Failed to get final results:', finalResultResponse.error);
+        alert('Failed to calculate final results. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Error ending competition:', error);
+      alert('Error ending competition. Please try again.');
+    }
+  };
+
+  // Add this function to get final results from backend
+  const handleViewFinalResults = async () => {
+    console.log('handleViewFinalResults called!'); // Debug log
+    if (!competition.competitionId) {
+      console.log('No competition ID found:', competition.competitionId);
+      return;
+    }
+    
+    try {
+      console.log('Getting final results from backend for competition:', competition.competitionId);
+      
+      // Call the backend to get final results
+      const response = await apiClient.getCompetitionResult({
+        competition_id: competition.competitionId
+      });
+      
+      console.log('Backend response:', response); // Debug log
+      
+      if (response.data) {
+        console.log('Final results retrieved successfully:', response.data);
+        
+        // Update competition state with final results from backend
+        setCompetition(prev => ({
+          ...prev,
+          status: 'completed',
+          result: response.data!.final_result,
+          user_score: response.data!.user_points,  // Map user_points to user_score
+          ai_score: response.data!.ai_points,      // Map ai_points to ai_score
+          rounds_data: response.data!.rounds_data,
+          can_get_certificate: response.data!.can_get_certificate
+        }));
+        
+        // Show final results
+        setShowResults(true);
+        
+      } else {
+        console.error('Failed to get final results:', response.error);
+        alert('Failed to get final results. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Error getting final results:', error);
+      alert('Error getting final results. Please try again.');
+    }
+  };
+
+  // Update the round result display - make sure the button calls the function
+  // Add a button to view final results after competition ends
+  if (competition.status === 'completed' && !showResults) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 text-center mb-8">
+          <Trophy className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+          <h1 className="text-3xl font-bold text-secondary-900 mb-4">Competition Completed!</h1>
+          <p className="text-secondary-600 mb-6">Click below to view your final results and get your certificate.</p>
+          
+          <Button onClick={handleViewFinalResults} className="bg-blue-600 hover:bg-blue-700">
+            View Final Results
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (showResults) {
     return (
@@ -714,8 +827,8 @@ export const CompetitionPage: React.FC = () => {
                 </div>
                 <p className="text-sm text-secondary-600 mb-2">{round.question}</p>
                 <div className="text-xs text-secondary-500">
-                  <p><strong>Your Query:</strong> {round.user_query}</p>
-                  <p><strong>AI Query:</strong> {round.ai_query}</p>
+                  <p><strong>Your Query:</strong> {round.user_sql}</p>  {/* Changed from user_query */}
+                  <p><strong>AI Query:</strong> {round.ai_sql}</p>      {/* Changed from ai_query */}
                   {round.explanation && (
                     <p className="mt-2"><strong>Explanation:</strong> {round.explanation}</p>
                   )}
@@ -729,22 +842,32 @@ export const CompetitionPage: React.FC = () => {
         {showCertificate && certificateData && (
           <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Your Competition Certificate</h2>
-            <Certificate
-              type="competition"
-              competition={{
-                name: `SQL Competition - ${competition.difficulty.charAt(0).toUpperCase() + competition.difficulty.slice(1)}`,
-                date: new Date().toLocaleDateString(),
-                certificate_url: "", // Required by interface but not used
-                result: competition.user_score > competition.ai_score ? 'win' : 
-                        competition.user_score < competition.ai_score ? 'lose' : 'tie',
-                user_score: competition.user_score,
-                ai_score: competition.ai_score,
-                difficulty: competition.difficulty
-              }}
-              userName={`${user?.name || 'User'} (${user?.email || 'user@example.com'})`}
-              session={undefined}
-              master={undefined}
-            />
+            <div className="max-w-7xl w-full"> {/* Already updated to max-w-7xl */}
+              <Certificate
+                type="competition"
+                competition={{
+                  name: `SQL Competition - ${competition.difficulty.charAt(0).toUpperCase() + competition.difficulty.slice(1)}`,
+                  date: new Date().toLocaleDateString(),
+                  certificate_url: "", // Required by interface but not used
+                  result: (() => {
+                    const { userScore, aiScore } = calculateScores();
+                    return userScore > aiScore ? 'win' : userScore < aiScore ? 'lose' : 'tie';
+                  })(),
+                  user_score: (() => {
+                    const { userScore } = calculateScores();
+                    return userScore;
+                  })(),
+                  ai_score: (() => {
+                    const { aiScore } = calculateScores();
+                    return aiScore;
+                  })(),
+                  difficulty: competition.difficulty
+                }}
+                userName={`${user?.name || 'User'} `}
+                session={undefined}
+                master={undefined}
+              />
+            </div>
           </div>
         )}
 
@@ -992,11 +1115,13 @@ export const CompetitionPage: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Your SQL Query
               </label>
-              <Textarea
+              <SQLEditor
                 value={competition.user_query}
-                onChange={(e) => setCompetition(prev => ({ ...prev, user_query: e.target.value }))}
+                onChange={(value) => setCompetition(prev => ({ ...prev, user_query: value }))}
                 placeholder="Write your SQL query here..."
-                className="w-full h-80 font-mono text-sm bg-gray-50 border-gray-300 focus:border-blue-500 focus:ring-blue-500 resize-none" // Much larger height and proper SQL styling
+                rows={12}
+                className="w-full"
+                disabled={false}
               />
             </div>
             
