@@ -360,6 +360,8 @@ async def complete_session(
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    print(f"🔍 DEBUG: Completing session {session_id} for user {current_user.id}")
+    
     try:
         # Find the session
         db_session = db.query(DBSession).filter(
@@ -368,16 +370,22 @@ async def complete_session(
         ).first()
         
         if not db_session:
+            print(f"❌ Session {session_id} not found for user {current_user.id}")
             raise HTTPException(status_code=404, detail="Session not found")
+        
+        print(f"🔍 DEBUG: Found session {session_id}, marking as completed")
         
         # Mark as completed
         db_session.completed_at = datetime.utcnow()
         db.commit()
         
+        print(f"✅ Session {session_id} completed successfully")
+        
         return {"message": "Session completed successfully", "session_id": session_id}
         
     except Exception as e:
         db.rollback()
+        print(f"❌ Error completing session {session_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to complete session: {str(e)}")
 
     

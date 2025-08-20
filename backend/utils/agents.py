@@ -387,12 +387,13 @@ class check_answer(dspy.Signature):
     - explanation: "The query joins customers and purchases but does not filter for purchases in 2023. It returns all customers with any purchase, not just those in 2023."
 
     Be concise, specific, and focus on the main reason for correctness or error.
+    THINK IN-DEPTH ABOUT THE EXPLANATION ADD DETAILS
     """
     question = dspy.InputField(desc="The original natural language question that was asked")
     sql = dspy.InputField(desc="The SQL query written by the user in response to the question")
     table_head = dspy.InputField(desc="The first few rows of the result from executing the SQL query")
     is_correct: bool = dspy.OutputField(desc="True or False — whether the SQL correctly answers the question")
-    explanation = dspy.OutputField(desc="A concise 2-line explanation of why the SQL is correct or not")
+    explanation = dspy.OutputField(desc="A explanation of why the SQL is correct or not")
 
 class code_fix(dspy.Signature):
     """

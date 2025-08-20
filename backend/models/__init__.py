@@ -32,13 +32,18 @@ if DB=="SUPABASE":
     DB_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
     # For Postgres, check if tables exist before creating (no-op if already present)
 
-    engine = create_engine(DB_URL, echo=True, poolclass=NullPool)
+    engine = create_engine(DB_URL, echo=False,poolclass=NullPool)
 else:
     DB_URL = os.getenv("DATABASE_URL")
     engine = create_engine(DB_URL, echo=False, future=True)
 # This creates a SQLAlchemy session factory called SessionLocal.
 # Each instance of SessionLocal() provides a database session for interacting with the database.
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-inspector = inspect(engine)
-tables = inspector.get_table_names()
-Base.metadata.create_all(engine)
+try:
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    if not tables:
+        Base.metadata.create_all(engine)
+except Exception as e:
+    print("Got error here in session stuff")
+

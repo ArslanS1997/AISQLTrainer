@@ -8,9 +8,9 @@ from sqlalchemy.pool import NullPool
 load_dotenv()
 
 # Fetch variables
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
+USER = os.getenv("dbuser")
+PASSWORD = os.getenv("dbpassword")
+HOST = os.getenv("dbhost")
 PORT = os.getenv("dbport")
 DBNAME = os.getenv("dbname")
 

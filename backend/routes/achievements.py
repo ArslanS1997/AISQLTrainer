@@ -363,29 +363,15 @@ async def get_user_certificates(
     """Get all certificates earned by the user."""
     user_id = current_user.id
     
-    # Check if user has premium access
+    # Check if user has premium access for downloading
     subscription_service = SubscriptionService(db)
     feature_check = subscription_service.can_use_feature(user_id, "download_certificate")
     
     print(f"DEBUG: User {user_id} certificate access check: {feature_check}")
     
-    if not feature_check["allowed"]:
-        print(f"DEBUG: User {user_id} doesn't have premium access")
-        # Instead of throwing an error, return a response indicating upgrade needed
-        return {
-            "certificates": [],
-            "requires_upgrade": True,
-            "upgrade_message": "Upgrade to Pro or Max to access your certificates and download them as PDFs",
-            "user_plan": feature_check.get("current_plan", "free"),
-            "available_features": ["View certificates", "Earn certificates through practice"],
-            "premium_features": ["Download certificates as PDF", "LinkedIn integration", "Master certificate eligibility"]
-        }
-    
-    # Rest of the existing code for premium users...
-    # Get all user's sessions
+    # Get all user's sessions (allow viewing for all users)
     sessions = db.query(DBSession).filter(
-        DBSession.user_id == user_id,
-        DBSession.completed_at.isnot(None)
+        DBSession.user_id == user_id
     ).all()
     
     certificates = []
@@ -393,52 +379,39 @@ async def get_user_certificates(
     for session in sessions:
         print(f"DEBUG: Processing session {session.id} - Difficulty: {session.difficulty}")
         
-        if session.queries and len(session.queries) > 0:
-            # Calculate score percentage with better debugging
-            total_queries = len(session.queries)
-            correct_queries = 0
-            
-            # Debug each query
-            print(f"DEBUG: Analyzing session {session.id} with {total_queries} queries:")
-            for i, q in enumerate(session.queries):
-                # More robust boolean checking
-                is_correct_value = q.get("is_correct") if isinstance(q, dict) else False
-                
-                # Handle different boolean representations
-                if isinstance(is_correct_value, str):
-                    is_correct = is_correct_value.lower() in ['true', '1', 'yes']
-                elif isinstance(is_correct_value, bool):
-                    is_correct = is_correct_value
-                else:
-                    is_correct = bool(is_correct_value)
-                
-                correct_queries += 1 if is_correct else 0
-                print(f"  Query {i}: is_correct_raw={is_correct_value}, is_correct_parsed={is_correct}")
+        # Calculate score percentage - only count answered questions
+        total_queries = len(session.queries)
+        answered_queries = [q for q in session.queries if isinstance(q, dict) and q.get("sql")]  # Check for "sql" field, not "user_query"
+        correct_queries = sum(1 for q in answered_queries if q.get("is_correct"))
 
-            score_percentage = (correct_queries / total_queries * 100) if total_queries > 0 else 0
-            
-            print(f"DEBUG: Session {session.id} - Total: {total_queries}, Correct: {correct_queries}, Score: {score_percentage}%")
-            
-              # Only sessions with 70%+ accuracy get certificates
+        # Use answered questions for score calculation
+        score_percentage = (correct_queries / len(answered_queries) * 100) if len(answered_queries) > 0 else 0
+
+        print(f"🔍 DEBUG: Session {session.id} - Total questions: {total_queries}, Answered: {len(answered_queries)}, Correct: {correct_queries}, Score: {score_percentage}%")
+
+        # Only give certificate for sessions where user actually answered questions
+        if len(answered_queries) > 0:
             cert = {
                 "id": session.id,
                 "session_id": session.id,
                 "title": f"{session.difficulty.title() if session.difficulty else 'Basic'} SQL Practice Session",
                 "difficulty": session.difficulty or "basic",
-                "score": round(score_percentage, 1),
-                "total_points": total_queries,
+                "score": round(score_percentage, 1),  # This is what frontend displays as percentage
+                "total_points": len(answered_queries),  # Use answered questions count
                 "correct_answers": correct_queries,
                 "completion_date": session.created_at.isoformat(),
                 "topic": session.difficulty.title() if session.difficulty else "General",
-                "certificate_url": f"/api/achievements/certificate/{session.id}"
+                "certificate_url": f"/api/achievements/certificate/{session.id}",
+                "type": "session"
             }
             certificates.append(cert)
-            print(f"DEBUG: Added certificate for session {session.id} with score {score_percentage}%")
-
+            print(f"🔍 DEBUG: Added certificate for session {session.id} with score {score_percentage}%")
         else:
-            print(f"DEBUG: Session {session.id} has no queries")
+            print(f"🔍 DEBUG: Session {session.id} has no answered questions")
     
     print(f"DEBUG: Returning {len(certificates)} certificates")
+    
+    # Return certificates for all users, but indicate upgrade requirement for downloading
     return {
         "certificates": certificates,
         "requires_upgrade": False,
@@ -533,13 +506,13 @@ async def get_certificate(
     if not session.queries or len(session.queries) == 0:
         raise HTTPException(status_code=400, detail="No completed questions in this session")
     
-    # Calculate session stats
+    # Calculate session stats - only count answered questions
     total_questions = len(session.queries)
-    correct_answers = sum(1 for q in session.queries if isinstance(q, dict) and q.get("is_correct"))
-    score_percentage = (correct_answers / total_questions * 100) if total_questions > 0 else 0
+    answered_questions = [q for q in session.queries if isinstance(q, dict) and q.get("user_query")]
+    correct_answers = sum(1 for q in answered_questions if q.get("is_correct"))
     
-    if score_percentage < 70:
-        raise HTTPException(status_code=400, detail="Score too low for certificate (minimum 70%)")
+    # Use answered questions for score calculation
+    score_percentage = (correct_answers / len(answered_questions) * 100) if len(answered_questions) > 0 else 0
     
     # Generate certificate data
     certificate_data = {
@@ -548,10 +521,10 @@ async def get_certificate(
         "session_id": session_id,
         "difficulty": session.difficulty or "basic",
         "score": int(score_percentage),
-        "total_questions": total_questions,
+        "total_questions": len(answered_questions),  # Use answered questions count
         "correct_answers": correct_answers,
-        "completion_date": session.created_at.strftime("%B %d, %Y"),
-        "topic": session.difficulty.title() if session.difficulty else "SQL Practice"
+        "completion_date": session.completed_at.strftime("%B %d, %Y") if session.completed_at else session.created_at.strftime("%B %d, %Y"),
+        "topic": session.difficulty.title() if session.difficulty else "SQL Practice",
     }
     
     return certificate_data
