@@ -14,6 +14,8 @@ frontend/.env
 # Backend environment files
 backend/.env
 
+backend/utils/.env
+
 # Frontend virtual environments and cache
 frontend/venv/
 frontend/.venv/

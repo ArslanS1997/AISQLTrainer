@@ -24,6 +24,12 @@ export const AchievementsPage: React.FC = () => {
     currentStreak: 0,
     totalCompetitions: 0,
     bestRank: null as number | null,
+    // Add more competition stats
+    competitionWins: 0,
+    competitionLosses: 0,
+    competitionTies: 0,
+    totalCompetitionPoints: 0,
+    averageCompetitionScore: 0,
   });
   const [progress, setProgress] = useState({
     beginnerCompleted: 0,
@@ -37,6 +43,9 @@ export const AchievementsPage: React.FC = () => {
     recentSessions: [] as any[],
     recentCompetitions: [] as any[]
   });
+  // Add competition history state
+  const [competitionHistory, setCompetitionHistory] = useState<any[]>([]);
+  
   // Add this state for subscription check
   const [userSubscription, setUserSubscription] = useState<any>(null);
 
@@ -65,6 +74,29 @@ export const AchievementsPage: React.FC = () => {
         const activityResponse = await apiClient.getRecentActivity();
         if (activityResponse.error) {
           throw new Error(activityResponse.error);
+        }
+        
+        // Fetch competition history
+        const competitionResponse = await apiClient.getCompetitionHistory();
+        if (competitionResponse.data) {
+          setCompetitionHistory(competitionResponse.data.competitions || []);
+          
+          // Calculate competition stats from history
+          const competitions = competitionResponse.data.competitions || [];
+          const wins = competitions.filter((c: any) => c.result === 'win').length;
+          const losses = competitions.filter((c: any) => c.result === 'lose').length;
+          const ties = competitions.filter((c: any) => c.result === 'tie').length;
+          const totalPoints = competitions.reduce((sum: number, c: any) => sum + (c.user_score || 0), 0);
+          const avgScore = competitions.length > 0 ? totalPoints / competitions.length : 0;
+          
+          setStats(prevStats => ({
+            ...prevStats,
+            competitionWins: wins,
+            competitionLosses: losses,
+            competitionTies: ties,
+            totalCompetitionPoints: totalPoints,
+            averageCompetitionScore: Math.round(avgScore * 10) / 10,
+          }));
         }
         
         // Update stats
@@ -399,47 +431,130 @@ export const AchievementsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Achievements */}
+          {/* Recent Competitions */}
           <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
-            <h2 className="text-lg font-semibold text-secondary-900 mb-6">Achievements</h2>
+            <h2 className="text-lg font-semibold text-secondary-900 mb-6">Recent Competitions</h2>
             
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {achievements.map((achievement) => (
-                <div 
-                  key={achievement.id} 
-                  className={`flex items-center space-x-3 p-4 rounded-lg ${
-                    achievement.earned 
-                      ? 'bg-green-50 border border-green-200' 
-                      : 'bg-secondary-50 border border-secondary-200'
-                  }`}
-                >
-                  <div className="text-2xl">{achievement.icon}</div>
-                  <div className="flex-1">
-                    <p className={`font-medium ${
-                      achievement.earned ? 'text-green-900' : 'text-secondary-900'
-                    }`}>
-                      {achievement.name}
-                    </p>
-                    <p className={`text-sm ${
-                      achievement.earned ? 'text-green-700' : 'text-secondary-600'
-                    }`}>
-                      {achievement.description}
-                    </p>
+            <div className="space-y-4">
+              {competitionHistory.length > 0 ? (
+                competitionHistory.slice(0, 5).map((competition) => (
+                  <div key={competition.competition_id} className="flex items-center justify-between p-4 bg-secondary-50 rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className={`w-3 h-3 rounded-full ${
+                        competition.result === 'win' ? 'bg-green-500' :
+                        competition.result === 'lose' ? 'bg-red-500' : 'bg-blue-500'
+                      }`}></div>
+                      <div>
+                        <p className="font-medium text-secondary-900">
+                          {competition.result === 'win' ? 'Victory' : 
+                           competition.result === 'lose' ? 'Defeat' : 'Tie'} vs AI
+                        </p>
+                        <p className="text-sm text-secondary-600">
+                          {competition.difficulty} • {new Date(competition.completed_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-secondary-900">{competition.user_score || 0} pts</p>
+                      <p className="text-sm text-secondary-500">vs {competition.ai_score || 0}</p>
+                    </div>
                   </div>
-                  {achievement.earned && (
-                    <Award className="h-5 w-5 text-green-500" />
-                  )}
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Trophy className="h-12 w-12 text-secondary-300 mx-auto mb-4" />
+                  <p className="text-secondary-500">No competitions yet</p>
+                  <p className="text-sm text-secondary-400">Join your first competition to see results here!</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
+        </div>
 
-          {/* Leaderboard */}
-          <div className="lg:col-span-1">
-            <Leaderboard entries={[]} />
+        {/* Enhanced Competition Stats */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mt-8">
+          <h2 className="text-xl font-semibold text-secondary-900 mb-6">Competition Performance</h2>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600 mb-2">{stats.totalCompetitions}</div>
+              <div className="text-sm text-secondary-600">Total Competitions</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600 mb-2">{stats.competitionWins}</div>
+              <div className="text-sm text-secondary-600">Wins</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600 mb-2">{stats.competitionLosses}</div>
+              <div className="text-sm text-secondary-600">Losses</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600 mb-2">{stats.averageCompetitionScore}</div>
+              <div className="text-sm text-secondary-600">Avg Score</div>
+            </div>
           </div>
+          
+          {/* Win Rate */}
+          {stats.totalCompetitions > 0 && (
+            <div className="mt-6 text-center">
+              <div className="text-lg font-semibold text-secondary-900 mb-2">
+                Win Rate: {Math.round((stats.competitionWins / stats.totalCompetitions) * 100)}%
+              </div>
+              <div className="w-full bg-secondary-200 rounded-full h-2">
+                <div 
+                  className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(stats.competitionWins / stats.totalCompetitions) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Achievements */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6">
+          <h2 className="text-lg font-semibold text-secondary-900 mb-6">Achievements</h2>
+          
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {achievements.map((achievement) => (
+              <div 
+                key={achievement.id} 
+                className={`flex items-center space-x-3 p-4 rounded-lg ${
+                  achievement.earned 
+                    ? 'bg-green-50 border border-green-200' 
+                    : 'bg-secondary-50 border border-secondary-200'
+                }`}
+              >
+                <div className="text-2xl">{achievement.icon}</div>
+                <div className="flex-1">
+                  <p className={`font-medium ${
+                    achievement.earned ? 'text-green-900' : 'text-secondary-900'
+                  }`}>
+                    {achievement.name}
+                  </p>
+                  <p className={`text-sm ${
+                    achievement.earned ? 'text-green-700' : 'text-secondary-600'
+                  }`}>
+                    {achievement.description}
+                  </p>
+                </div>
+                {achievement.earned && (
+                  <Award className="h-5 w-5 text-green-500" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Leaderboard */}
+        <div className="lg:col-span-1">
+          <Leaderboard entries={[]} />
         </div>
       </div>
     </div>
   );
-}; 
+};
+
+export default AchievementsPage; 

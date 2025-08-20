@@ -718,9 +718,12 @@ export const CompetitionPage: React.FC = () => {
     }
   };
 
-  // Add this function to get final results from backend
+  // Add state for final results
+  const [finalResults, setFinalResults] = useState<any>(null);
+
+  // Update the handleViewFinalResults function
   const handleViewFinalResults = async () => {
-    console.log('handleViewFinalResults called!'); // Debug log
+    console.log('handleViewFinalResults called!');
     if (!competition.competitionId) {
       console.log('No competition ID found:', competition.competitionId);
       return;
@@ -734,35 +737,393 @@ export const CompetitionPage: React.FC = () => {
         competition_id: competition.competitionId
       });
       
-      console.log('Backend response:', response); // Debug log
-      
       if (response.data) {
         console.log('Final results retrieved successfully:', response.data);
-        
-        // Update competition state with final results from backend
-        setCompetition(prev => ({
-          ...prev,
-          status: 'completed',
-          result: response.data!.final_result,
-          user_score: response.data!.user_points,  // Map user_points to user_score
-          ai_score: response.data!.ai_points,      // Map ai_points to ai_score
-          rounds_data: response.data!.rounds_data,
-          can_get_certificate: response.data!.can_get_certificate
-        }));
-        
-        // Show final results
+        setFinalResults(response.data);
         setShowResults(true);
-        
       } else {
         console.error('Failed to get final results:', response.error);
         alert('Failed to get final results. Please try again.');
       }
-      
     } catch (error) {
       console.error('Error getting final results:', error);
       alert('Error getting final results. Please try again.');
     }
   };
+
+  // Add the final results display
+  if (showResults && finalResults) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 mb-8">
+          <div className="text-center">
+            <Trophy className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+            <h1 className="text-3xl font-bold text-secondary-900 mb-2">Competition Results</h1>
+            <p className="text-secondary-600">Final scores and round-by-round breakdown</p>
+          </div>
+        </div>
+
+        {/* Final Score Summary */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-6">
+          <h2 className="text-2xl font-semibold mb-4 text-center">Final Score</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <h3 className="text-lg font-semibold text-blue-800 mb-2">Your Score</h3>
+              <div className="text-3xl font-bold text-blue-600">{finalResults.user_points}</div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <h3 className="text-lg font-semibold text-green-800 mb-2">AI Score</h3>
+              <div className="text-3xl font-bold text-green-600">{finalResults.ai_points}</div>
+            </div>
+          </div>
+          
+          {/* Result */}
+          <div className="text-center mt-6">
+            <div className={`text-xl font-semibold ${
+              finalResults.final_result === 'win' ? 'text-green-600' : 
+              finalResults.final_result === 'lose' ? 'text-red-600' : 'text-blue-600'
+            }`}>
+              {finalResults.final_result === 'win' ? '🎉 You Won!' : 
+               finalResults.final_result === 'lose' ? '🎉 AI Won' : '🤝 It\'s a Tie!'}
+            </div>
+            <p className="text-secondary-600 mt-2">{finalResults.certificate_message}</p>
+          </div>
+        </div>
+
+        {/* Round-by-Round Results */}
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-6">
+          <h2 className="text-2xl font-semibold mb-4">Round-by-Round Results</h2>
+          <div className="space-y-4">
+            {finalResults.rounds_data.map((round: any, index: number) => (
+              <div key={index} className="border border-secondary-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold">Round {round.round}</h3>
+                  <div className="flex items-center space-x-4">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      round.user_correct ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      You: {round.user_points} pt
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      round.ai_correct ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      AI: {round.ai_points} pt
+                    </span>
+                  </div>
+                </div>
+                
+                <p className="text-secondary-700 mb-3">{round.question}</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                  <div className={`p-3 rounded border ${round.user_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                    <h4 className="font-semibold mb-2 flex items-center">
+                      {round.user_correct ? (
+                        <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                      ) : (
+                        <X className="h-4 w-4 mr-1 text-red-600" />
+                      )}
+                      Your Query
+                    </h4>
+                    <pre className="text-sm bg-white p-2 rounded border">
+                      {round.user_sql}
+                    </pre>
+                  </div>
+                  
+                  <div className={`p-3 rounded border ${round.ai_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                    <h4 className="font-semibold mb-2 flex items-center">
+                      {round.ai_correct ? (
+                        <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                      ) : (
+                        <X className="h-4 w-4 mr-1 text-red-600" />
+                      )}
+                      AI Query
+                    </h4>
+                    <pre className="text-sm bg-white p-2 rounded border">
+                      {round.ai_sql}
+                    </pre>
+                  </div>
+                </div>
+                
+                {/* Explanation */}
+                {round.explanation && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-semibold mb-2 text-blue-800">Explanation</h4>
+                    <p className="text-blue-700 text-sm">{round.explanation}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex justify-center space-x-4">
+          <Button onClick={() => window.location.href = '/competition'}>
+            Play Again
+          </Button>
+          <Button onClick={() => window.location.href = '/achievements'}>
+            View Achievements
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Update the round result display - show View Final Results button for final round
+  if (showRoundResult && currentRoundResult) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 mb-6">
+          <h2 className="text-2xl font-semibold text-center mb-6">
+            Round {currentRoundResult.round} Result
+          </h2>
+          
+          {/* Winner Display */}
+          <div className="mb-4">
+            {currentRoundResult.winner === 'human' && (
+              <div className="text-green-600 text-lg font-semibold">
+                 You won this round! 🎉
+              </div>
+            )}
+            {currentRoundResult.winner === 'ai' && (
+              <div className="text-red-600 text-lg font-semibold">
+                 AI won this round
+              </div>
+            )}
+            {currentRoundResult.winner === 'both' && (
+              <div className="text-blue-600 text-lg font-semibold">
+                🤝 It's a tie! Both got it right
+              </div>
+            )}
+            {currentRoundResult.winner === 'none' && (
+              <div className="text-yellow-600 text-lg font-semibold">
+                ⚠️ Both got it wrong
+              </div>
+            )}
+          </div>
+
+          {/* Results Summary with Symbols */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-700 mb-2">Your Query</h4>
+              <div className={`p-3 rounded border ${currentRoundResult.human_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <code className="text-sm font-mono text-gray-800">{currentRoundResult.human_sql}</code>
+              </div>
+              <div className={`mt-2 text-sm font-medium ${currentRoundResult.human_correct ? 'text-green-600' : 'text-red-600'}`}>
+                {currentRoundResult.human_correct ? '✅ Correct' : '❌ Incorrect'}
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-700 mb-2">AI Query</h4>
+              <div className={`p-3 rounded border ${currentRoundResult.ai_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <code className="text-sm font-mono text-gray-800">{currentRoundResult.ai_sql}</code>
+              </div>
+              <div className={`mt-2 text-sm font-medium ${currentRoundResult.ai_correct ? 'text-green-600' : 'text-red-600'}`}>
+                {currentRoundResult.ai_correct ? '✅ Correct' : '❌ Incorrect'}
+              </div>
+            </div>
+          </div>
+
+          {/* Explanation */}
+          <div className="bg-blue-50 p-4 rounded-lg mb-4">
+            <h4 className="font-semibold text-blue-800 mb-3">Explanation</h4>
+            <div className="text-blue-700 text-sm leading-relaxed space-y-3">
+              {(() => {
+                const explanation = currentRoundResult.explanation;
+                
+                // Split by key phrases to create proper sections
+                const sections = [];
+                
+                // Handle all possible explanation patterns
+                if (explanation.includes('Why AI was correct:')) {
+                  const aiPart = explanation.split('Why AI was correct:')[1]?.split('Why you were wrong:')[0];
+                  if (aiPart) {
+                    sections.push({
+                      type: 'ai_correct',
+                      title: 'Why AI was correct:',
+                      content: aiPart.trim()
+                    });
+                  }
+                }
+                
+                if (explanation.includes('Why you were correct:')) {
+                  const humanPart = explanation.split('Why you were correct:')[1]?.split('Why AI was wrong:')[0]?.split('Why AI was also correct:')[0];
+                  if (humanPart) {
+                    sections.push({
+                      type: 'human_correct',
+                      title: 'Why you were correct:',
+                      content: humanPart.trim()
+                    });
+                  }
+                }
+                
+                if (explanation.includes('Why you were wrong:')) {
+                  const humanWrongPart = explanation.split('Why you were wrong:')[1]?.split('Here\'s how you can correct')[0]?.split('To get the actual')[0];
+                  if (humanWrongPart) {
+                    sections.push({
+                      type: 'human_wrong',
+                      title: 'Why you were wrong:',
+                      content: humanWrongPart.trim()
+                    });
+                  }
+                }
+                
+                if (explanation.includes('Why AI was wrong:')) {
+                  const aiWrongPart = explanation.split('Why AI was wrong:')[1]?.split('Why you were correct:')[0];
+                  if (aiWrongPart) {
+                    sections.push({
+                      type: 'ai_wrong',
+                      title: 'Why AI was wrong:',
+                      content: aiWrongPart.trim()
+                    });
+                  }
+                }
+                
+                if (explanation.includes('Why AI was also correct:')) {
+                  const aiAlsoPart = explanation.split('Why AI was also correct:')[1]?.split('Here\'s how')[0];
+                  if (aiAlsoPart) {
+                    sections.push({
+                      type: 'ai_also_correct',
+                      title: 'Why AI was also correct:',
+                      content: aiAlsoPart.trim()
+                    });
+                  }
+                }
+                
+                if (explanation.includes('Here\'s how you can correct')) {
+                  const correctionPart = explanation.split('Here\'s how you can correct')[1];
+                  if (correctionPart) {
+                    sections.push({
+                      type: 'correction',
+                      title: 'Here\'s how you can correct your query:',
+                      content: correctionPart.trim()
+                    });
+                  }
+                }
+                
+                // If no sections were found, treat as general explanation
+                if (sections.length === 0) {
+                  sections.push({
+                    type: 'general',
+                    title: 'Explanation',
+                    content: explanation
+                  });
+                }
+                
+                return sections.map((section, index) => (
+                  <div key={index} className="mb-4">
+                    <h5 className="font-semibold text-blue-900 mb-2 flex items-center">
+                      {section.type === 'ai_correct' && <span className="text-green-600 mr-2">✅</span>}
+                      {section.type === 'human_correct' && <span className="text-green-600 mr-2">✅</span>}
+                      {section.type === 'human_wrong' && <span className="text-red-600 mr-2">❌</span>}
+                      {section.type === 'ai_wrong' && <span className="text-red-600 mr-2">❌</span>}
+                      {section.type === 'ai_also_correct' && <span className="text-green-600 mr-2">✅</span>}
+                      {section.type === 'correction' && <span className="text-blue-600 mr-2">🔄</span>}
+                      {section.type === 'general' && <span className="text-blue-600 mr-2">ℹ️</span>}
+                      {section.title}
+                    </h5>
+                    <div className="ml-6">
+                      {(() => {
+                        // Handle markdown code blocks first
+                        if (section.content.includes('```sql')) {
+                          const parts = section.content.split('```sql');
+                          return parts.map((part, partIndex) => {
+                            if (partIndex === 0) {
+                              // Text before the code block
+                              return part.split('. ').map((sentence, sentIndex) => {
+                                const trimmedSentence = sentence.trim();
+                                if (!trimmedSentence) return null;
+    return (
+                                  <p key={sentIndex} className="mb-2 leading-relaxed">
+                                    {trimmedSentence}
+                                  </p>
+                                );
+                              });
+                            } else {
+                              // Handle the SQL code block
+                              const codeAndText = part.split('```');
+                              if (codeAndText.length >= 2) {
+                                const sqlCode = codeAndText[0].trim();
+                                const remainingText = codeAndText.slice(1).join('```');
+
+  return (
+                                  <div key={partIndex}>
+                                    <pre className="bg-white p-3 rounded border text-sm font-mono text-blue-800 overflow-x-auto mb-3">
+                                      {sqlCode}
+                                    </pre>
+                                    {remainingText && (
+                <div>
+                                        {remainingText.split('. ').map((sentence, sentIndex) => {
+                                          const trimmedSentence = sentence.trim();
+                                          if (!trimmedSentence) return null;
+                                          return (
+                                            <p key={sentIndex} className="mb-2 leading-relaxed">
+                                              {trimmedSentence}
+                                            </p>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                            }
+                          });
+                        } else {
+                          // No code blocks, just regular text
+                          return section.content.split('. ').map((sentence, sentIndex) => {
+                            const trimmedSentence = sentence.trim();
+                            if (!trimmedSentence) return null;
+                            
+                            if (trimmedSentence.includes('SELECT') || trimmedSentence.includes('FROM') || trimmedSentence.includes('WHERE')) {
+                              return (
+                                <div key={sentIndex} className="mb-3">
+                                  <p className="mb-2">{trimmedSentence.split('SELECT')[0]}</p>
+                                  <pre className="bg-white p-3 rounded border text-sm font-mono text-blue-800 overflow-x-auto">
+                                    SELECT{trimmedSentence.split('SELECT')[1]}
+                                  </pre>
+                                </div>
+                              );
+                            }
+                            
+                            return (
+                              <p key={sentIndex} className="mb-2 leading-relaxed">
+                                {trimmedSentence}
+                              </p>
+                            );
+                          });
+                        }
+                      })()}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex justify-center space-x-4 mt-8">
+            {competition.current_round < 5 ? (
+              // Not final round - show "Next Round" button
+              <Button onClick={moveToNextRound} className="bg-blue-600 hover:bg-blue-700">
+                Next Round
+              </Button>
+            ) : (
+              // Final round - show "View Final Results" button
+              <Button 
+                onClick={handleViewFinalResults} 
+                className="bg-green-600 hover:bg-green-700"
+              >
+                View Final Results
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Update the round result display - make sure the button calls the function
   // Add a button to view final results after competition ends
@@ -976,7 +1337,7 @@ export const CompetitionPage: React.FC = () => {
               </div>
               <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
                 <span className="text-sm font-medium">Your Time Limit</span>
-                <span className="text-sm text-secondary-600">3 Minutes Total</span>
+                <span className="text-sm text-secondary-600">3 Minutes per question</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
                 <span className="text-sm font-medium">AI Time per Question</span>
@@ -1125,160 +1486,58 @@ export const CompetitionPage: React.FC = () => {
               />
             </div>
             
-            <div className="flex gap-3">
-              <Button
+            {/* Submit Button */}
+            <div className="flex justify-between items-center">
+              <div className="text-sm text-secondary-600">
+                <span className="font-medium">Tip:</span> Write clear, readable SQL queries
+              </div>
+              <Button 
                 onClick={() => handleSubmitAnswer()}
                 disabled={isLoading || !competition.user_query.trim()}
-                className="flex-1"
-                size="lg"
-                variant="primary"
+                className="bg-blue-600 hover:bg-blue-700"
               >
-                {isLoading ? 'Submitting...' : 'Submit Answer'}
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Submit Answer
+                  </>
+                )}
               </Button>
-              
-              {/* Next Round Button - Shows after submission, next to Submit button */}
-              {showRoundResult && competition.current_round < 5 && (
-                <Button
-                  onClick={moveToNextRound}
-                  className="flex-1"
-                  size="lg"
-                  variant="secondary"
-                >
-                  Next Round ({competition.current_round + 1}/5)
-                </Button>
-              )}
-              
-              {/* Final Results Button - Shows after last round */}
-              {showRoundResult && competition.current_round === 5 && (
-                <Button
-                  onClick={() => setShowResults(true)}
-                  className="flex-1"
-                  size="lg"
-                  variant="primary"
-                >
-                  View Final Results
-                </Button>
-              )}
             </div>
           </div>
 
-          {/* Round Result Display - Shows after submission */}
-          {showRoundResult && currentRoundResult && (
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-              <div className="text-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800 mb-2">
-                  Round {currentRoundResult.round} Results
-                </h3>
-                
-                {/* Winner Display */}
-                <div className="mb-4">
-                  {currentRoundResult.winner === 'human' && (
-                    <div className="text-green-600 text-lg font-semibold">
-                       You won this round! 🎉
-                    </div>
-                  )}
-                  {currentRoundResult.winner === 'ai' && (
-                    <div className="text-red-600 text-lg font-semibold">
-                       AI won this round
-                    </div>
-                  )}
-                  {currentRoundResult.winner === 'both' && (
-                    <div className="text-blue-600 text-lg font-semibold">
-                      🤝 It's a tie! Both got it right
-                    </div>
-                  )}
-                  {currentRoundResult.winner === 'none' && (
-                    <div className="text-yellow-600 text-lg font-semibold">
-                      ⚠️ Both got it wrong
-                    </div>
-                  )}
+          {/* Explanation Modal */}
+          {showExplanation && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full m-4 p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <XCircle className="h-6 w-6 text-red-500" />
+                  <h3 className="text-lg font-semibold">Incorrect Answer</h3>
                 </div>
-              </div>
-
-              {/* Results Summary with Symbols */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-gray-700 mb-2">Your Query</h4>
-                  <div className={`p-3 rounded border ${currentRoundResult.human_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                    <code className="text-sm font-mono text-gray-800">{currentRoundResult.human_sql}</code>
-                  </div>
-                  <div className={`mt-2 text-sm font-medium ${currentRoundResult.human_correct ? 'text-green-600' : 'text-red-600'}`}>
-                    {currentRoundResult.human_correct ? '✅ Correct' : '❌ Incorrect'}
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-semibold text-gray-700 mb-2">AI Query</h4>
-                  <div className={`p-3 rounded border ${currentRoundResult.ai_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                    <code className="text-sm font-mono text-gray-800">{currentRoundResult.ai_sql}</code>
-                  </div>
-                  <div className={`mt-2 text-sm font-medium ${currentRoundResult.ai_correct ? 'text-green-600' : 'text-red-600'}`}>
-                    {currentRoundResult.ai_correct ? '✅ Correct' : '❌ Incorrect'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Explanation */}
-              <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                <h4 className="font-semibold text-blue-800 mb-2">Explanation</h4>
-                <p className="text-blue-700 text-sm">{currentRoundResult.explanation}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Query Results Display */}
-          {/* Remove this entire Query Results section */}
-          {/*
-          {competition.user_query && (
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-              <h3 className="text-lg font-semibold mb-4">Query Results</h3>
-              
-              <div className="mb-4">
-                <h4 className="font-medium text-gray-700 mb-2">Your Query</h4>
-                <div className="bg-gray-100 p-3 rounded">
-                  <code className="text-sm">{competition.user_query}</code>
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-medium text-gray-700 mb-2">AI Query</h4>
-                <div className="bg-gray-100 p-3 rounded">
-                  <code className="text-sm">
-                    {competition.aiResponses[competition.current_round] || 'AI response not ready yet'}
-                  </code>
+                <p className="text-secondary-700 mb-6">{currentExplanation}</p>
+                <div className="flex justify-end">
+                  <Button onClick={() => setShowExplanation(false)}>
+                    Continue
+                  </Button>
                 </div>
               </div>
             </div>
           )}
-          */}
-        </div>
-      )}
-
-      {/* Explanation Modal */}
-      {showExplanation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full m-4 p-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <XCircle className="h-6 w-6 text-red-500" />
-              <h3 className="text-lg font-semibold">Incorrect Answer</h3>
-            </div>
-            <p className="text-secondary-700 mb-6">{currentExplanation}</p>
-            <div className="flex justify-end">
-              <Button onClick={() => setShowExplanation(false)}>
-                Continue
-              </Button>
-            </div>
-          </div>
         </div>
       )}
 
       <UpgradeModal 
-            isOpen={isModalOpen} 
-            onClose={hideUpgradeModal}
-            onUpgrade={() => {}}
-            feature="competitions"
-            currentPlan={subscription?.plan?.name || 'free'}
-          />
+        isOpen={isModalOpen} 
+        onClose={hideUpgradeModal}
+        onUpgrade={() => {}}
+        feature="competitions"
+        currentPlan={subscription?.plan?.name || 'free'}
+      />
     </div>
   );
 };

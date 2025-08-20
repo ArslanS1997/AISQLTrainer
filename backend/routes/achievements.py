@@ -419,23 +419,22 @@ async def get_user_certificates(
             
             print(f"DEBUG: Session {session.id} - Total: {total_queries}, Correct: {correct_queries}, Score: {score_percentage}%")
             
-            if score_percentage >= 70:  # Only sessions with 70%+ accuracy get certificates
-                cert = {
-                    "id": session.id,
-                    "session_id": session.id,
-                    "title": f"{session.difficulty.title() if session.difficulty else 'Basic'} SQL Practice Session",
-                    "difficulty": session.difficulty or "basic",
-                    "score": round(score_percentage, 1),
-                    "total_points": total_queries,
-                    "correct_answers": correct_queries,
-                    "completion_date": session.created_at.isoformat(),
-                    "topic": session.difficulty.title() if session.difficulty else "General",
-                    "certificate_url": f"/api/achievements/certificate/{session.id}"
-                }
-                certificates.append(cert)
-                print(f"DEBUG: Added certificate for session {session.id} with score {score_percentage}%")
-            else:
-                print(f"DEBUG: Session {session.id} score {score_percentage}% too low for certificate")
+              # Only sessions with 70%+ accuracy get certificates
+            cert = {
+                "id": session.id,
+                "session_id": session.id,
+                "title": f"{session.difficulty.title() if session.difficulty else 'Basic'} SQL Practice Session",
+                "difficulty": session.difficulty or "basic",
+                "score": round(score_percentage, 1),
+                "total_points": total_queries,
+                "correct_answers": correct_queries,
+                "completion_date": session.created_at.isoformat(),
+                "topic": session.difficulty.title() if session.difficulty else "General",
+                "certificate_url": f"/api/achievements/certificate/{session.id}"
+            }
+            certificates.append(cert)
+            print(f"DEBUG: Added certificate for session {session.id} with score {score_percentage}%")
+
         else:
             print(f"DEBUG: Session {session.id} has no queries")
     

@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/competition", tags=["Competition"])
 from utils.agents import competition_question_gen_agent, check_correct_agent, explanation_gen_agent, both_wrong_explanation_agent
 import dspy
 
+
 # Point system based on difficulty
 DIFFICULTY_POINTS = {
     'basic': 10,
@@ -206,7 +207,7 @@ async def start_competition(
 
 
 @router.post("/round-result", response_model=WinnerExplanationResponse)
-async def get_competition_result(
+async def get_round_result(
     request: WinnerExplanationRequest,
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -219,15 +220,16 @@ async def get_competition_result(
     
     if request.ai_iscorrect and not request.human_iscorrect:
         winner = "ai"
-        explanation = request.ai_explanation
+        explanation = f"Why AI was correct: {request.ai_explanation} Why you were wrong: {request.human_explanation}"
         correct_sql = request.ai_sql
     elif not request.ai_iscorrect and request.human_iscorrect:
         winner = "human"
-        explanation = request.human_explanation
+        explanation = f"Why you were correct: {request.human_explanation} Why AI was wrong: {request.ai_explanation}"
+
         correct_sql = request.human_sql
     elif request.ai_iscorrect and request.human_iscorrect:
         winner = "both"
-        explanation = request.human_explanation
+        explanation = f"Why you were correct: {request.human_explanation} Why AI was also correct: {request.ai_explanation}"
         correct_sql = request.human_sql
     else:
         winner = "none"
@@ -262,7 +264,10 @@ async def get_competition_result(
             round_record.ai_points = difficulty_multiplier.get(request.difficulty.lower(), 1)
         
         db.commit()
+        
+        # REMOVED: Don't update competition scores here - do it at final-result instead
 
+    
     return WinnerExplanationResponse(
         competition_id=request.competition_id,
         round=request.round,
@@ -543,7 +548,7 @@ async def submit_competition(
 ):
     """Submit user's query for the competition and get final result."""
     competition = db.query(Competition).filter(
-        Competition.competition_id == request.competition_id,
+        Competition.id == request.competition_id,
         Competition.user_id == current_user.id
     ).first()
 
@@ -555,8 +560,12 @@ async def submit_competition(
         CompetitionRound.competition_id == request.competition_id
     ).all()
     
-    user_points = sum(round.user_points for round in rounds)
-    ai_points = sum(round.ai_points for round in rounds)
+    # Calculate final scores from all rounds
+    user_points = sum(round.user_points for round in rounds if round.user_points is not None)
+    ai_points = sum(round.ai_points for round in rounds if round.ai_points is not None)
+    
+    print(f"Final competition scores calculated: User={user_points}, AI={ai_points}")
+    print(f"Rounds data: {[(r.round_number, r.user_points, r.ai_points) for r in rounds]}")
     
     # Update competition with final scores
     competition.user_score = user_points
@@ -581,6 +590,14 @@ async def submit_competition(
     competition.result = final_result
     db.commit()
 
+    # --- Additional functionality: Mark competition as completed and update user usage ---
+    # This mirrors the logic in complete_competition endpoint (file_context_0)
+    # Increment user's competition usage
+
+    subscription_service = SubscriptionService(db)
+    subscription_service.increment_usage(current_user.id, "competition")
+    # -------------------------------------------------------------------------------
+
     # Prepare rounds_data from CompetitionRound records
     rounds_data = []
     for round_record in rounds:
@@ -598,7 +615,7 @@ async def submit_competition(
         })
 
     return CompetitionResultResponse(
-        competition_id=competition.competition_id,
+        competition_id=request.competition_id,
         final_result=final_result,
         user_points=user_points,
         ai_points=ai_points,
@@ -606,7 +623,7 @@ async def submit_competition(
         can_get_certificate=can_get_certificate,
         certificate_message=certificate_message,
         schema_ddl=competition.schema_ddl,
-        questions=competition.questions
+        questions=[str(q) for q in competition.questions] 
     )
 
 
@@ -663,33 +680,3 @@ async def get_competition_stats(
     }
 
 
-@router.post("/{competition_id}/complete")
-async def complete_competition(
-    competition_id: str,
-    current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Mark competition as completed and update user usage."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    # Verify the competition belongs to the current user
-    competition = db.query(Competition).filter(
-        Competition.id == competition_id,
-        Competition.user_id == current_user.id
-    ).first()
-    
-    if not competition:
-        raise HTTPException(status_code=404, detail="Competition not found")
-    
-    # Update competition status to completed
-    competition.status = 'completed'
-    competition.completed_at = datetime.utcnow()
-    
-    # Increment user's competition usage
-    subscription_service = SubscriptionService(db)
-    subscription_service.increment_usage(current_user.id, "competition")
-    
-    db.commit()
-    
-    return {"message": "Competition completed successfully"}
