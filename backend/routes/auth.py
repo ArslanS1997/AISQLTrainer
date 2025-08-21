@@ -145,7 +145,7 @@ async def get_available_models(
 
 claude_3_5_sonnet = dspy.LM('anthropic/claude-3-5-sonnet-20240620',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
 gemini_pro = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
-gpt_5 = dspy.LM(model='openai/gpt-5', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=None, temperature=1, max_completion_tokens=7000)
+gpt_5 = dspy.LM(model='openai/gpt-5', api_key=os.environ.get("OPENAI_API_KEY"),max_tokens=None, temperature=1.0, max_completion_tokens=7000)
 
 
 
