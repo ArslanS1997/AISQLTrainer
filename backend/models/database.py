@@ -2,7 +2,7 @@
 Database models for SQL Trainer AI backend using SQLAlchemy ORM.
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,31 +28,12 @@ class User(Base):
     last_login_at = Column(DateTime, default=func.now(), onupdate=func.now())
     subscription_plan_id = Column(String(255), ForeignKey("subscription_plans.id"))
     
-    # Relationship to SubscriptionPlan (one-to-many)
-    subscription_plan = relationship("SubscriptionPlan", back_populates="users")
-    # Relationship to UserUsage (one-to-many)
-    usage_records = relationship("UserUsage", back_populates="user")
-    # Relationship to Schema (one-to-many)
-    schemas = relationship("Schema", back_populates="user")
-    # Relationship to Session (one-to-many)
-    sessions = relationship("Session", back_populates="user")
-    # Relationship to CompetitionSubmission (one-to-many)
-    competition_submissions = relationship("Competition", back_populates="user")
-    # Relationship to Subscription (one-to-many)
-    subscriptions = relationship("Subscription", back_populates="user")
-
-class Schema(Base):
-    """Database schema model for storing generated schemas."""
-    __tablename__ = "schemas"
-    
-    schema_id = Column(String(255), primary_key=True, default=generate_uuid)
-    user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
-    schema_script = Column(Text, nullable=False)  # Store the full schema script as long text
-    created_at = Column(DateTime, default=func.now())
-    
     # Relationships
-    user = relationship("User", back_populates="schemas")
-    sessions = relationship("Session", back_populates="schema")
+    subscription_plan = relationship("SubscriptionPlan", back_populates="users")
+    usage_records = relationship("UserUsage", back_populates="user")
+    sessions = relationship("Session", back_populates="user")
+    competition_submissions = relationship("Competition", back_populates="user")
+    subscriptions = relationship("Subscription", back_populates="user")
 
 class Session(Base):
     """Practice session model for storing user practice sessions."""
@@ -60,8 +41,10 @@ class Session(Base):
     
     id = Column(String(255), primary_key=True, default=generate_uuid)
     user_id = Column(String(255), ForeignKey("users.id"), nullable=False)
-    schema_id = Column(String(255), ForeignKey("schemas.schema_id"), nullable=False)
-    queries = Column(JSON, nullable=False)  # Store queries and results as JSON
+    
+    # Remove the old queries JSON field
+    # queries = Column(JSON, nullable=False)
+    
     difficulty = Column(String(255))
     total_score = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
@@ -69,7 +52,7 @@ class Session(Base):
 
     # Relationships
     user = relationship("User", back_populates="sessions")
-    schema = relationship("Schema", back_populates="sessions")
+    questions = relationship("SessionQuestion", back_populates="session", order_by="SessionQuestion.question_number")
 
 
 class Competition(Base):
@@ -209,3 +192,38 @@ class Subscription(Base):
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
+
+class SessionQuestion(Base):
+    """Individual questions within a practice session."""
+    __tablename__ = "session_questions"
+    
+    id = Column(String(255), primary_key=True, default=generate_uuid)
+    session_id = Column(String(255), ForeignKey("sessions.id"), nullable=False)
+    question_number = Column(Integer, nullable=False)  # 1, 2, 3, etc.
+    
+    # Question content
+    question_text = Column(Text, nullable=False)
+    difficulty = Column(String(50), nullable=False)  # basic, intermediate, advanced
+    topic = Column(String(100), nullable=False)  # joins, aggregation, etc.
+    
+    # User's response
+    user_sql = Column(Text, nullable=True)  # User's SQL answer
+    is_correct = Column(Boolean, nullable=True)  # Was the answer correct?
+    points_earned = Column(Integer, default=0)  # Points earned for this question
+    
+    # AI feedback
+    explanation = Column(Text, nullable=True)  # AI's explanation
+    expected_sql = Column(Text, nullable=True)  # Expected/correct SQL
+    table_head = Column(Text, nullable=True)  # Result table preview
+    
+    # Metadata
+    answered_at = Column(DateTime, nullable=True)  # When user answered
+    created_at = Column(DateTime, default=func.now())
+    
+    # Relationships
+    session = relationship("Session", back_populates="questions")
+    
+    # Composite unique constraint
+    __table_args__ = (
+        UniqueConstraint('session_id', 'question_number', name='unique_session_question'),
+    )

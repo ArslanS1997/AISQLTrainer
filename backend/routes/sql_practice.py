@@ -33,7 +33,8 @@ from routes.auth import get_current_user
 router = APIRouter(prefix="/api/sql", tags=["SQL Practice"])
 
 
-from models import Session as DBSession, Schema as DBSchema
+from models import Session as DBSession, SessionQuestion 
+    
 
 # @router.post('/get-explanation', response_model=ExplanationRequest)
 # (No implementation provided in original code)
@@ -95,46 +96,43 @@ async def create_session(
             raise HTTPException(status_code=400, detail="Missing required fields")
 
         created_at = datetime.utcnow().replace(microsecond=0)
-        # if not schema_id:
-        schema_id = str(uuid.uuid4())
         
-        db_schema = DBSchema(
-            schema_id=schema_id,
-            user_id=user_id,
-            schema_script=schema_script,
-            created_at=created_at
-        )
-        db.add(db_schema)
-        db.commit()
-        db.refresh(db_schema)
-        schema_id = db_schema.schema_id
+        # Remove all DBSchema creation code:
+        # schema_id = str(uuid.uuid4())
+        # db_schema = DBSchema(...)
+        # db.add(db_schema)
+        # db.commit()
+        # db.refresh(db_schema)
+        # schema_id = db_schema.schema_id
 
+        # Create session directly without schema_id:
         db_session = DBSession(
             id=session_id,
             user_id=user_id,
-            schema_id=schema_id,
-            queries=[],
+            # Remove this line:
+            # schema_id=schema_id,
+            queries=[],  # Keep this for now, will be replaced by SessionQuestion
             total_score=0,
-            difficulty=request.difficulty,  # Add this line
-            created_at=created_at,
-            completed_at=None
+            difficulty=difficulty,
+            created_at=created_at
         )
         db.add(db_session)
         db.commit()
         db.refresh(db_session)
+
         return {
+            "message": "Session created successfully",
             "session_id": session_id,
             "user_id": user_id,
-            "schema_id": schema_id,
+            # Remove this line:
+            # "schema_id": schema_id,
             "schema_script": schema_script,
-            "difficulty": difficulty,
-            "created_at": created_at,
-            "status": "active"
+            "difficulty": difficulty
         }
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"create_session error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"create-session error: {str(e)}")
 
 
 
@@ -144,78 +142,55 @@ async def generate_schema(
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user),
     lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
-
-
 ):
     """
     Generate schema, store in DB, associate with user.
-
-
     """
     # --- AUTH DEBUGGING ---
     if not current_user or not getattr(current_user, "id", None):
         raise HTTPException(status_code=401, detail="User not authenticated (generate-schema)")
     # --- END AUTH DEBUGGING ---
+    
     try:
-
         user_id = current_user.id
+        user_prompt = request.prompt
         session_id = request.session_id
-        conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
-        existing_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-        for table in existing_tables:
-            try:
-                conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
-            except Exception:
-                pass
-        # Get user-specific model
+        difficulty = request.difficulty
+
+        if not all([user_id, user_prompt, session_id, difficulty]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Generate schema using AI
+        response = await create_schema_agent(user_prompt=user_prompt)
         
-        
-        # Use the model
-        with dspy.context(lm=default_lm):
-            response = await create_schema_agent(user_prompt=request.prompt)
-            
-        retry = False
-        created_at = datetime.utcnow().replace(microsecond=0)
+        # Test the schema by executing it
         try:
-
+            conn = get_duckdb_conn(user_id, session_id)
             conn.execute(response.schema_sql.replace('```','').replace('sql',''))
-
+            table_names = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+            schema_created = len(table_names) > 0
         except Exception as e:
-            retry = True
-            with dspy.context(lm=lm):
-                response = await redo_schema_agent(user_query = request.prompt, previous_schema= response.schema_sql, errors=str(e)[:200])
+            # Try to fix the schema
+            response = await redo_schema_agent(user_query = user_prompt, previous_schema= response.schema_sql, errors=str(e)[:200])
             conn.execute(response.schema_sql.replace('```','').replace('sql',''))
+            table_names = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+            schema_created = len(table_names) > 0
 
+        # Remove DBSchema creation:
+        # schema_id = str(uuid.uuid4())
+        # db_schema = DBSchema(...)
+        # db.add(db_schema)
+        # db.commit()
+        # db.refresh(db_schema)
 
-        # Check for reserved keywords in table or column names and add 's' if found
-
-        tables = conn.execute("SHOW TABLES").fetchall()
-        table_names = [row[0] for row in tables]
-        schema_created = len(table_names) > 0
-
-        # Generate a unique schema_id
-        schema_id = str(uuid.uuid4())
-        
-        db_schema = DBSchema(
-            schema_id=schema_id,
-            user_id=user_id,
-            schema_script=response.schema_sql,
-            created_at=created_at
-        )
-        db.add(db_schema)
-        db.commit()
-        db.refresh(db_schema)
-
-        # returner = 
         return SQLSchemaResponse(
             user_id=user_id,
             session_id=session_id,
             schema_script=response.schema_sql,
-            created_at=created_at,
             schema_created=schema_created
         )
+
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)} + {str(request)} ")
 
 # @router.post("/question-generator", response_model=QuestionResponse)
@@ -261,11 +236,42 @@ async def generate_question(
 
         questions_list = response.questions
         
+        # Store questions in SessionQuestion table
+        try:
+            for i, question_text in enumerate(questions_list):
+                # Create question record
+                question_record = SessionQuestion(
+                    session_id=request.session_id,
+                    question_number=i + 1,  # Start from 1
+                    question_text=question_text,
+                    difficulty=request.difficulty,
+                    topic=request.topic,
+                    # These will be filled when user answers:
+                    user_sql=None,
+                    is_correct=None,
+                    points_earned=0,
+                    explanation=None,
+                    expected_sql=None,
+                    table_head=None,
+                    answered_at=None
+                )
+                db.add(question_record)
+            
+            db.commit()
+            print(f"✅ DEBUG: Stored {len(questions_list)} questions in SessionQuestion table for session {request.session_id}")
+            
+        except Exception as e:
+            db.rollback()
+            print(f"❌ ERROR: Failed to store questions in database: {str(e)}")
+            # Don't fail the entire request if DB storage fails
+            # Questions are still generated and returned
+        
         # Track usage only after complete workflow (schema + populate + questions)
         subscription_service = SubscriptionService(db)
         subscription_service.increment_usage(current_user.id, "generate_schema")
         
         return {"user_id": str(request.user_id), "session_id": str(request.session_id), "questions": questions_list}
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"question-generator error: {str(e)} + {str(request)})")
 
@@ -282,8 +288,11 @@ async def check_correct(
     except Exception:
         raise HTTPException(status_code=404, detail="DuckDB connection not found for the given user/session")
     
-
+    # Get the database session
     db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
     difficulty_multiplier = {
         "basic": 5,
         "intermediate": 10,
@@ -319,22 +328,56 @@ async def check_correct(
         points = 0
         is_correct = False
 
-    # Update session queries and total score if session exists
-    if db_session:
-        queries = db_session.queries or []
-        queries.append({
-            "question": request.question,
-            "sql": request.sql,
-            "is_correct": is_correct,
-            "explanation": explanation,
-            "table_head": table_head,
-            "points": points,
-            "difficulty": request.difficulty,
-            "checked_at": datetime.utcnow().isoformat()
-        })
-        db_session.queries = queries
-        db_session.total_score = sum(q.get("points", 0) for q in queries if isinstance(q, dict))
+    # Create or update the question record
+    try:
+        # Find existing question or create new one
+        existing_question = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == request.session_id,
+            SessionQuestion.question_text == request.question
+        ).first()
+        
+        if existing_question:
+            # Update existing question
+            existing_question.user_sql = request.sql
+            existing_question.is_correct = is_correct
+            existing_question.points_earned = points
+            existing_question.explanation = explanation
+            existing_question.table_head = table_head
+            existing_question.answered_at = datetime.utcnow()
+            
+            question_record = existing_question
+        else:
+            # Create new question record (fallback if not pre-stored)
+            question_record = SessionQuestion(
+                session_id=request.session_id,
+                question_number=len(db_session.questions) + 1,
+                question_text=request.question,
+                difficulty=request.difficulty,
+                topic="general",
+                user_sql=request.sql,
+                is_correct=is_correct,
+                points_earned=points,
+                explanation=explanation,
+                table_head=table_head,
+                answered_at=datetime.utcnow()
+            )
+            db.add(question_record)
+        
+        # Recalculate total score from all questions
+        db_session.total_score = sum(q.points_earned for q in db_session.questions)
+        
+        # Commit the changes
         db.commit()
+        
+        print(f"✅ DEBUG: Updated session {request.session_id}")
+        print(f"✅ DEBUG: Question: {request.question[:50]}...")
+        print(f"✅ DEBUG: Correct: {is_correct}, Points: {points}")
+        print(f"✅ DEBUG: Total score: {db_session.total_score}")
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ ERROR: Failed to update question {request.session_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update question: {str(e)}")
 
     return CheckCorrectResponse(
         user_id=request.user_id,
@@ -356,7 +399,7 @@ async def complete_session(
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user)
 ):
-    """Mark a practice session as completed."""
+    """Mark a practice session as completed and calculate final score."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -373,7 +416,26 @@ async def complete_session(
             print(f"❌ Session {session_id} not found for user {current_user.id}")
             raise HTTPException(status_code=404, detail="Session not found")
         
-        print(f"🔍 DEBUG: Found session {session_id}, marking as completed")
+        print(f"🔍 DEBUG: Found session {session_id}, calculating final score...")
+        
+        # Get all questions from SessionQuestion table for this session
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == session_id
+        ).order_by(SessionQuestion.question_number).all()
+        
+        # Calculate final score from actual question records
+        total_questions = len(session_questions)
+        correct_answers = sum(1 for q in session_questions if q.is_correct)
+        total_points = sum(q.points_earned for q in session_questions)
+        
+        # Calculate percentage score
+        score_percentage = (correct_answers / total_questions * 100) if total_questions > 0 else 0
+        
+        print(f"✅ DEBUG: Final score calculated:")
+        print(f"   - Total questions: {total_questions}")
+        print(f"   - Correct answers: {correct_answers}")
+        print(f"   - Total points: {total_points}")
+        print(f"   - Score percentage: {score_percentage:.1f}%")
         
         # Mark as completed
         db_session.completed_at = datetime.utcnow()
@@ -381,7 +443,16 @@ async def complete_session(
         
         print(f"✅ Session {session_id} completed successfully")
         
-        return {"message": "Session completed successfully", "session_id": session_id}
+        return {
+            "message": "Session completed successfully", 
+            "session_id": session_id,
+            "final_score": {
+                "total_questions": total_questions,
+                "correct_answers": correct_answers,
+                "total_points": total_points,
+                "score_percentage": round(score_percentage, 1)
+            }
+        }
         
     except Exception as e:
         db.rollback()
@@ -582,42 +653,6 @@ async def get_sessions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"sessions error: {str(e)}")
 
-
-@router.get("/schemas", response_model=List[SQLSchemaResponse])
-async def get_user_schemas(
-    current_user: Any = Depends(get_current_user),
-    db=Depends(get_db)
-):
-    """
-    Get user's generated schemas.
-    Returns list of schemas created by the user.
-    """
-    # --- AUTH DEBUGGING ---
-    if not current_user or not getattr(current_user, "id", None):
-        raise HTTPException(status_code=401, detail="User not authenticated (schemas)")
-    # --- END AUTH DEBUGGING ---
-    try:
-        user_id = current_user.id
-        schemas = (
-            db.query(DBSchema)
-            .filter(DBSchema.user_id == user_id)
-            .order_by(DBSchema.created_at.desc())
-            .all()
-        )
-        schema_responses = []
-        for s in schemas:
-            schema_responses.append(
-                SQLSchemaResponse(
-                    user_id=s.user_id,
-                    session_id=s.schema_id,
-                    created_at=s.created_at,
-                    schema_script=s.schema_script,
-                    schema_created=True
-                )
-            )
-        return schema_responses
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"schemas error: {str(e)}") 
 
 @router.post("/complete-all-sessions")
 async def complete_all_sessions(
