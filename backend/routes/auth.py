@@ -145,7 +145,7 @@ async def get_available_models(
 
 claude_3_5_sonnet = dspy.LM('anthropic/claude-3-5-sonnet-20240620',api_key=os.environ.get("ANTHROPIC_API_KEY"), max_tokens =5000)
 gemini_pro = dspy.LM('gemini/gemini-2.5-pro', api_key=os.environ.get("GEMINI_API_KEY"), max_tokens=7000)
-# gpt_5 = dspy.LM(model='openai/gpt-5', api_key=os.environ.get("OPENAI_API_KEY"), temperature=1.0, max_completion_tokens=7000)
+gpt_5 = dspy.LM(model='openai/gpt-5', api_key=os.environ.get("OPENAI_API_KEY"), temperature=1.0, max_completion_tokens=7000)
 
 
 
@@ -176,7 +176,7 @@ def get_model_for_user(user_id: str, db) -> dspy.LM:
     elif name == 'gemini-2.5-pro':
         return gemini_pro
     elif name == 'gpt-5':
-        return dspy.LM(model='openai/gpt-5',max_tokens=None, api_key=os.environ.get("OPENAI_API_KEY"), temperature=1.0, max_completion_tokens=7000)
+        return gpt_5
     else:
         # Fallback: load dynamically (should only happen for free model)
         return dspy.LM(
