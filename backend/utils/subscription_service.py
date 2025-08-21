@@ -213,3 +213,40 @@ class SubscriptionService:
             'can_get_master_certificate': plan.can_get_master_certificate,
             'ai_model_tier': plan.ai_model_tier
         }
+
+    def populate_plans_if_empty(self):
+        """Populate plans table if it's empty using existing PLAN_CONFIGS."""
+        try:
+            # Check if plans already exist
+            existing_plans = self.db.query(SubscriptionPlan).count()
+            
+            if existing_plans == 0:
+                print("📋 No plans found, populating with defaults...")
+                
+                for plan_name, config in PLAN_CONFIGS.items():
+                    # Create plan record with correct field names
+                    plan = SubscriptionPlan(
+                        name=config['name'],
+                        display_name=config['display_name'],
+                        # Use the correct field names from your model
+                        stripe_price_id_monthly=os.getenv(f"STRIPE_{plan_name.upper()}_MONTHLY_PRICE_ID", f"price_{plan_name}_monthly"),
+                        stripe_price_id_yearly=os.getenv(f"STRIPE_{plan_name.upper()}_YEARLY_PRICE_ID", f"price_{plan_name}_yearly"),
+                        price_monthly=0,  # Set actual prices if needed
+                        price_yearly=0,   # Set actual prices if needed
+                        # Map the features and limits to the correct columns
+                        max_schemas_per_month=config['limits']['max_schemas_per_month'],
+                        max_competitions_per_month=config['limits']['max_competitions_per_month'],
+                        can_download_certificates=config['features']['can_download_certificates'],
+                        can_get_master_certificate=config['features']['can_get_master_certificate'],
+                        ai_model_tier=config['features']['ai_model_tier']
+                    )
+                    self.db.add(plan)
+                
+                self.db.commit()
+                print(f"✅ Successfully populated {len(PLAN_CONFIGS)} plans")
+            else:
+                print(f" Found {existing_plans} existing plans, skipping population")
+                
+        except Exception as e:
+            self.db.rollback()
+            print(f"❌ Error populating plans: {e}")

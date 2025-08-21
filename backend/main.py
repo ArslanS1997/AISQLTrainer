@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import dspy
 import uvicorn
 from utils.subscription_service import SubscriptionService
+from models import SessionLocal
 
 # Import routes
 from routes import (
@@ -67,6 +68,17 @@ app.include_router(stripe_router)
 async def health_check():
     """Health check endpoint for monitoring."""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# Add this to your app startup
+@app.on_event("startup")
+async def startup_event():
+    # Populate plans if table is empty
+    db = SessionLocal()
+    try:
+        subscription_service = SubscriptionService(db)
+        subscription_service.populate_plans_if_empty()
+    finally:
+        db.close()
 
 if __name__ == "__main__":
  
