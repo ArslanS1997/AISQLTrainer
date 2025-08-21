@@ -10,6 +10,7 @@ import { QueryResultViewer } from '../components/QueryResultViewer';
 import { Database, RotateCcw, Eye, EyeOff, Award } from 'lucide-react';
 import { apiClient } from '../utils/api';
 import { Difficulty } from '../types';  // Import the shared type
+import { Certificate } from '../components/certificate'; // Use lowercase to match filename
 
 
 // Add this UUID generator function at the top of the component or outside it:
@@ -106,6 +107,8 @@ export const MainPage: React.FC = () => {
     populate: false,
     questions: false
   });
+  const [sessionCompleted, setSessionCompleted] = useState(false); // New state for session completion
+  const [selectedCertificate, setSelectedCertificate] = useState<any>(null); // Added state for certificate modal
 
   // Only destructure what we use
   const { subscription, refetchSubscription } = useSubscription();
@@ -170,7 +173,7 @@ export const MainPage: React.FC = () => {
 
       if (used >= limit) {
         showUpgradeModal('schema', subscription.plan.name);
-        return; // Don't proceed with schema generation
+        return;
       }
     }
     
@@ -181,7 +184,8 @@ export const MainPage: React.FC = () => {
     try {
       const sessionId = generateUUID();
       
-      // Step 1: Generate Schema
+      // Step 1: Generate Schema (creates DuckDB schema)
+      setLoadingSteps(prev => ({ ...prev, schema: true }));
       const schemaResponse = await apiClient.generateSchema({
         user_id: user?.id || 'anonymous',
         session_id: sessionId,
@@ -198,11 +202,27 @@ export const MainPage: React.FC = () => {
       setCompletedSteps(prev => ({ ...prev, schema: true }));
       setLoadingSteps(prev => ({ ...prev, populate: true }));
 
-      // Step 2: Populate Tables (fix the property name to sql_schema)
+      // Step 2: Create Session (creates database record)
+      console.log('Creating database session...');
+      const sessionCreationResponse = await apiClient.createSession({
+        user_id: user.id,
+        session_id: sessionId,
+        schema_script: schemaResponse.data.schema_script,
+        difficulty: difficulty
+      });
+
+      if (sessionCreationResponse.error) {
+        console.error('Failed to create session:', sessionCreationResponse.error);
+        return;
+      }
+      
+      console.log('Session created successfully!');
+
+      // Step 3: Populate Tables (fills tables with data)
       const populateResponse = await apiClient.populateTables({
         user_id: user?.id || 'anonymous',
         session_id: sessionId,
-        sql_schema: schemaResponse.data.schema_script  // Changed to sql_schema
+        sql_schema: schemaResponse.data.schema_script
       });
 
       if (populateResponse.error) {
@@ -214,7 +234,7 @@ export const MainPage: React.FC = () => {
       setCompletedSteps(prev => ({ ...prev, populate: true }));
       setLoadingSteps(prev => ({ ...prev, questions: true }));
 
-      // Step 3: Generate Questions
+      // Step 4: Generate Questions (creates and stores questions)
       const questionsResponse = await apiClient.generateQuestions({
         user_id: user?.id || 'anonymous',
         session_id: sessionId,
@@ -232,30 +252,27 @@ export const MainPage: React.FC = () => {
       setCompletedSteps(prev => ({ ...prev, questions: true }));
       setLoadingSteps({ schema: false, populate: false, questions: false });
 
-      // Set all the state (fix the questions mapping)
+      // Set all the state
       setGeneratedSchema(schemaResponse.data.schema_script);
       
-      // Fix the SQLQuestion mapping to include all required properties:
+      // Fix the SQLQuestion mapping
       const sqlQuestions: SQLQuestion[] = questionsResponse.data.questions.map((q: string, index: number) => ({
         id: `${sessionId}_${index}`,
         prompt: q,
         difficulty: difficulty as 'basic' | 'intermediate' | 'advanced',
         topic: topic,
-        points: 1, // Default points per question
-        explanation: '', // Will be filled when user submits
-        expectedQuery: '', // Will be filled when user submits
+        points: 1,
+        explanation: '',
+        expectedQuery: '',
         hint: ''
       }));
       
-      setQuestions(sqlQuestions); // Re-enable setting questions
-      setCurrentSession({ // Re-enable setting current session
+      setQuestions(sqlQuestions);
+      setCurrentSession({
         id: sessionId,
         createdAt: new Date(),
       });
       
-      // setShowSchemaDiagram(true); // This line was removed
-      
-      // Fix setSchemaMeta to include all required properties:
       setSchemaMeta({
         user_id: user.id,
         session_id: sessionId,
@@ -263,35 +280,11 @@ export const MainPage: React.FC = () => {
         schema_created: true
       });
       
-      // Fix the parsedTables - it should parse the schema string, not call generateSchemaFromTables
       const parsedTables = parseSchemaToTables(schemaResponse.data.schema_script);
       setParsedTables(parsedTables);
       setGenerationSuccess(true);
 
-      // CREATE THE DATABASE SESSION - THIS WAS MISSING!
-      console.log('About to create session with data:', {
-        user_id: user.id,
-        session_id: sessionId,
-        schema_script: schemaResponse.data.schema_script,
-        difficulty: difficulty
-      });
-
-      const sessionCreationResponse = await apiClient.createSession({
-        user_id: user.id,
-        session_id: sessionId,
-        schema_script: schemaResponse.data.schema_script,
-        difficulty: difficulty
-      });
-
-      console.log('Session creation response:', sessionCreationResponse);
-
-      if (sessionCreationResponse.error) {
-        console.error('Failed to create session:', sessionCreationResponse.error);
-      } else {
-        console.log('Session created successfully!');
-      }
-
-      // Refresh subscription data to update the counter
+      // Refresh subscription data
       await refetchSubscription();
 
     } catch (error) {
@@ -303,10 +296,20 @@ export const MainPage: React.FC = () => {
   };
   
   const completeSession = async (sessionId: string) => {
+    console.log('🔄 completeSession called with sessionId:', sessionId);
     try {
-      await apiClient.completeSession(sessionId);
+      const result = await apiClient.completeSession(sessionId);
+      console.log('✅ completeSession API response:', result);
+      
+      if (result.error) {
+        console.error('❌ completeSession API error:', result.error);
+        throw new Error(result.error);
+      }
+      
+      return result;
     } catch (error) {
-      console.error('Failed to complete session:', error);
+      console.error('❌ completeSession failed:', error);
+      throw error;
     }
   };
 
@@ -314,15 +317,23 @@ export const MainPage: React.FC = () => {
   const submitAnswer = async () => {
     if (!user || !currentAnswer.trim()) return;
     setIsSubmitting(true);
+    
+    console.log('🔍 DEBUG: Submitting answer...');
+    console.log('🔍 DEBUG: currentSession?.id:', currentSession?.id);
+    console.log('🔍 DEBUG: currentQuestionIndex:', currentQuestionIndex);
+    console.log('🔍 DEBUG: questions.length:', questions.length);
+    
     try {
       const res = await apiClient.checkAnswer({
         user_id: user.id || 'anonymous',
-        session_id: currentSession?.id, // Use currentSession?.id
+        session_id: currentSession?.id,
         question: questions[currentQuestionIndex].prompt,
         sql: currentAnswer,
         difficulty: difficulty
       });
-      if (!res.data) return; // guard
+      
+      if (!res.data) return;
+      
       const { is_correct, explanation, points, table_head } = res.data;
       setAnswerResults(prev => ({
         ...prev,
@@ -337,13 +348,19 @@ export const MainPage: React.FC = () => {
       // Check if this was the last question and complete the session
       if (currentQuestionIndex === questions.length - 1) {
         console.log('🎯 Last question answered, completing session...');
+        console.log('🔍 DEBUG: Session ID to complete:', currentSession?.id);
+        
         if (currentSession?.id) {
           try {
+            console.log('🔄 Calling completeSession...');
             await completeSession(currentSession.id);
             console.log('✅ Session completed successfully');
+            setSessionCompleted(true);
           } catch (error) {
             console.error('❌ Failed to complete session:', error);
           }
+        } else {
+          console.error('❌ No session ID available to complete');
         }
       }
     } finally {
@@ -394,6 +411,7 @@ export const MainPage: React.FC = () => {
       populate: false,
       questions: false
     });
+    setSessionCompleted(false); // Reset sessionCompleted
   };
 
   // Get the user's answer for the current question
@@ -814,14 +832,14 @@ const getSessionProgress = () => {
                     {/* Check if user has a paid plan - default to free if no subscription found */}
                     {subscription?.plan?.name && subscription.plan.name !== 'free' ? (
                       <Button 
-                        onClick={async () => {
-                          // Session is already completed, now generate certificate
+                        onClick={() => {
+                          // Just render the certificate modal
                           const totalPoints = Object.values(answerResults).reduce((sum, result) => sum + (result.points || 0), 0);
                           const correctAnswers = Object.values(answerResults).filter(result => result.isCorrect).length;
                           const totalQuestions = Object.keys(answerResults).length;
                           const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
                           
-                          // Generate certificate data
+                          // Generate certificate data for display
                           const certificateData = {
                             id: currentSession?.id,
                             session_id: currentSession?.id,
@@ -836,23 +854,13 @@ const getSessionProgress = () => {
                             certificate_url: `/api/achievements/certificate/${currentSession?.id}`
                           };
                           
-                          // Store certificate in localStorage for immediate access
-                          const existingCertificates = JSON.parse(localStorage.getItem('userCertificates') || '[]');
-                          existingCertificates.push(certificateData);
-                          localStorage.setItem('userCertificates', JSON.stringify(existingCertificates));
-                          
-                          // Show success message
-                          alert('🎉 Certificate generated successfully! Check your certificates page.');
-                          
-                          // Optionally redirect to certificates page
-                          setTimeout(() => {
-                            window.location.href = '/certificates';
-                          }, 1500);
+                          // Set the selected certificate to show the modal
+                          setSelectedCertificate(certificateData);
                         }}
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <Award className="h-4 w-4 mr-2" />
-                        Get Your Certificate
+                        View Your Certificate
                       </Button>
                     ) : (
                       <div className="text-center space-y-3">
@@ -923,6 +931,59 @@ const getSessionProgress = () => {
                 Progress: {getSessionProgress().answered}/{getSessionProgress().total} ({getSessionProgress().percentage}%)
               </div>
             {/* ) // This line was removed */}
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Modal */}
+      {selectedCertificate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg w-[98vw] max-w-none max-h-[98vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold">Your Certificate</h2>
+                <button
+                  onClick={() => setSelectedCertificate(null)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Certificate content */}
+              <div className="w-full">
+                <Certificate 
+                  type="session"
+                  userName={user?.name || 'Student'}
+                  session={{
+                    session_id: selectedCertificate.session_id || '',
+                    title: selectedCertificate.title,
+                    difficulty: selectedCertificate.difficulty,
+                    score: selectedCertificate.score || 0,
+                    total_points: selectedCertificate.total_points || 0,
+                    completion_date: selectedCertificate.completion_date,
+                    topic: selectedCertificate.topic,
+                    certificate_url: selectedCertificate.certificate_url
+                  }}
+                />
+              </div>
+              
+              <div className="mt-6 flex justify-end space-x-3">
+                <Button
+                  onClick={() => setSelectedCertificate(null)}
+                  variant="outline"
+                >
+                  Close
+                </Button>
+                <Button
+                  onClick={() => window.print()}
+                >
+                  Print Certificate
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -96,43 +96,31 @@ async def create_session(
             raise HTTPException(status_code=400, detail="Missing required fields")
 
         created_at = datetime.utcnow().replace(microsecond=0)
-        
-        # Remove all DBSchema creation code:
-        # schema_id = str(uuid.uuid4())
-        # db_schema = DBSchema(...)
-        # db.add(db_schema)
-        # db.commit()
-        # db.refresh(db_schema)
-        # schema_id = db_schema.schema_id
+        # if not schema_id:
 
-        # Create session directly without schema_id:
         db_session = DBSession(
             id=session_id,
             user_id=user_id,
-            # Remove this line:
-            # schema_id=schema_id,
-            queries=[],  # Keep this for now, will be replaced by SessionQuestion
             total_score=0,
-            difficulty=difficulty,
-            created_at=created_at
+            difficulty=request.difficulty,  # Add this line
+            created_at=created_at,
+            completed_at=None
         )
         db.add(db_session)
         db.commit()
         db.refresh(db_session)
-
         return {
-            "message": "Session created successfully",
             "session_id": session_id,
             "user_id": user_id,
-            # Remove this line:
-            # "schema_id": schema_id,
             "schema_script": schema_script,
-            "difficulty": difficulty
+            "difficulty": difficulty,
+            "created_at": created_at,
+            "status": "active"
         }
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"create-session error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"create_session error: {str(e)}")
 
 
 
@@ -142,54 +130,64 @@ async def generate_schema(
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user),
     lm: dspy.LM = Depends(lambda db=Depends(get_db), current_user=Depends(get_current_user): get_model_for_user(current_user.id, db))
+
+
 ):
     """
     Generate schema, store in DB, associate with user.
+
+
     """
     # --- AUTH DEBUGGING ---
     if not current_user or not getattr(current_user, "id", None):
         raise HTTPException(status_code=401, detail="User not authenticated (generate-schema)")
     # --- END AUTH DEBUGGING ---
-    
     try:
+
         user_id = current_user.id
-        user_prompt = request.prompt
         session_id = request.session_id
-        difficulty = request.difficulty
-
-        if not all([user_id, user_prompt, session_id, difficulty]):
-            raise HTTPException(status_code=400, detail="Missing required fields")
-
-        # Generate schema using AI
-        response = await create_schema_agent(user_prompt=user_prompt)
+        conn = get_duckdb_conn(user_id=user_id, session_id=session_id)
+        existing_tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+        for table in existing_tables:
+            try:
+                conn.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE')
+            except Exception:
+                pass
+        # Get user-specific model
         
-        # Test the schema by executing it
+        
+        # Use the model
+        with dspy.context(lm=default_lm):
+            response = await create_schema_agent(user_prompt=request.prompt)
+            
+        retry = False
+        created_at = datetime.utcnow().replace(microsecond=0)
         try:
-            conn = get_duckdb_conn(user_id, session_id)
-            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
-            table_names = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-            schema_created = len(table_names) > 0
-        except Exception as e:
-            # Try to fix the schema
-            response = await redo_schema_agent(user_query = user_prompt, previous_schema= response.schema_sql, errors=str(e)[:200])
-            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
-            table_names = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
-            schema_created = len(table_names) > 0
 
-        # Remove DBSchema creation:
-        # schema_id = str(uuid.uuid4())
-        # db_schema = DBSchema(...)
-        # db.add(db_schema)
-        # db.commit()
-        # db.refresh(db_schema)
+            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
+
+        except Exception as e:
+            retry = True
+            with dspy.context(lm=lm):
+                response = await redo_schema_agent(user_query = request.prompt, previous_schema= response.schema_sql, errors=str(e)[:200])
+            conn.execute(response.schema_sql.replace('```','').replace('sql',''))
+
+
+        # Check for reserved keywords in table or column names and add 's' if found
+
+        tables = conn.execute("SHOW TABLES").fetchall()
+        table_names = [row[0] for row in tables]
+        schema_created = len(table_names) > 0
+
+
 
         return SQLSchemaResponse(
             user_id=user_id,
             session_id=session_id,
             schema_script=response.schema_sql,
+            created_at=created_at,
             schema_created=schema_created
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"generate-schema error: {str(e)} + {str(request)} ")
 
@@ -307,7 +305,7 @@ async def check_correct(
     try:
         result_df = conn.execute(request.sql).fetch_df().head(10)
         table_head = result_df.to_markdown(index=False)
-        with dspy.context(lm=lm):
+        with dspy.context(lm=default_lm):
             response = await check_correct_agent(
                 question=request.question,
                 sql=request.sql,
@@ -319,7 +317,7 @@ async def check_correct(
     except Exception as e:
         # SQL execution failed, generate explanation
         table_head = ""
-        with dspy.context(lm=lm):
+        with dspy.context(lm=default_lm):
                 response = await explanation_gen_agent(
                     error_generated=str(e)[:300],
                     faulty_sql=request.sql
@@ -485,14 +483,15 @@ async def execute_sql(
         result = execution.to_markdown(index=False)
         error_message = None
 
-        db_session = db.query(DBSession).filter(DBSession.id == request.session_id).first()
-        if db_session:
-            queries = db_session.queries or []
-            queries.append({
-                "query": request.query,
-                "executed_at": datetime.utcnow().isoformat()
-            })
-            db_session.queries = queries
+        # Get the session question from SessionQuestion table
+        db_session_question = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == request.session_id
+        ).first()
+        
+        if db_session_question:
+            # Update the existing question with the executed SQL
+            db_session_question.user_sql = request.query
+            db_session_question.executed_at = datetime.utcnow()
             db.commit()
 
         return SQLExecuteResponse(success=True, result=result, error_message=error_message)
@@ -652,6 +651,7 @@ async def get_sessions(
         return session_responses
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"sessions error: {str(e)}")
+
 
 
 @router.post("/complete-all-sessions")

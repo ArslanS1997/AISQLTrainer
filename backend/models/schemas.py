@@ -123,8 +123,6 @@ class CreateSessionResponse(BaseModel):
 
 class SessionResponse(BaseModel):
     session_id: str
-    schema_id: str
-    queries: List[Dict[str, Any]]
     total_score: int
     created_at: datetime
     completed_at: Optional[datetime] = None

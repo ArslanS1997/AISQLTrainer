@@ -2,7 +2,7 @@
 Database models for SQL Trainer AI backend using SQLAlchemy ORM.
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON, UniqueConstraint, CheckConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -193,37 +193,37 @@ class Subscription(Base):
     # Relationships
     user = relationship("User", back_populates="subscriptions")
 
+
+
 class SessionQuestion(Base):
     """Individual questions within a practice session."""
     __tablename__ = "session_questions"
     
     id = Column(String(255), primary_key=True, default=generate_uuid)
-    session_id = Column(String(255), ForeignKey("sessions.id"), nullable=False)
+    session_id = Column(String(255), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     question_number = Column(Integer, nullable=False)  # 1, 2, 3, etc.
     
     # Question content
     question_text = Column(Text, nullable=False)
     difficulty = Column(String(50), nullable=False)  # basic, intermediate, advanced
-    topic = Column(String(100), nullable=False)  # joins, aggregation, etc.
+    topic = Column(String(100), nullable=False)
     
-    # User's response
-    user_sql = Column(Text, nullable=True)  # User's SQL answer
-    is_correct = Column(Boolean, nullable=True)  # Was the answer correct?
-    points_earned = Column(Integer, default=0)  # Points earned for this question
+    # User's answer (filled when answered)
+    user_sql = Column(Text, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+    points_earned = Column(Integer, default=0)
+    explanation = Column(Text, nullable=True)
+    expected_sql = Column(Text, nullable=True)
+    table_head = Column(Text, nullable=True)
+    answered_at = Column(DateTime, nullable=True)
     
-    # AI feedback
-    explanation = Column(Text, nullable=True)  # AI's explanation
-    expected_sql = Column(Text, nullable=True)  # Expected/correct SQL
-    table_head = Column(Text, nullable=True)  # Result table preview
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Metadata
-    answered_at = Column(DateTime, nullable=True)  # When user answered
-    created_at = Column(DateTime, default=func.now())
-    
-    # Relationships
+    # Relationship
     session = relationship("Session", back_populates="questions")
     
-    # Composite unique constraint
+    # Composite unique constraint (only when session_id is not null)
     __table_args__ = (
-        UniqueConstraint('session_id', 'question_number', name='unique_session_question'),
+        CheckConstraint('session_id IS NOT NULL OR question_number IS NOT NULL', name='valid_question'),
     )

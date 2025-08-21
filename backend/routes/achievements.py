@@ -12,6 +12,7 @@ from models.schemas import DashboardStatsResponse, ProgressResponse, Competition
 from routes.auth import get_current_user, get_db
 from models.database import Session as DBSession
 from models.database import Competition
+from models.database import SessionQuestion
 
 from utils.subscription_service import SubscriptionService
 
@@ -24,7 +25,7 @@ async def get_dashboard_stats(
 ):
     user_id = current_user.id
 
-    # Calculate average score from individual query results, not total_score
+    # Calculate average score from SessionQuestion table
     total_correct = 0
     total_queries = 0
     sessions = db.query(DBSession).filter(DBSession.user_id == user_id).all()
@@ -39,13 +40,17 @@ async def get_dashboard_stats(
             current_streak=0
         )
 
+    # Get all questions for all user sessions
     for session in sessions:
-        if session.queries:
-            for query in session.queries:
-                if isinstance(query, dict):
-                    total_queries += 1
-                    if query.get("is_correct"):
-                        total_correct += 1
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == session.id
+        ).all()
+        
+        for question in session_questions:
+            if question.user_sql is not None:  # Only count answered questions
+                total_queries += 1
+                if question.is_correct:
+                    total_correct += 1
 
     average_score = round((total_correct / total_queries * 100), 2) if total_queries > 0 else 0.0
 
@@ -117,10 +122,17 @@ async def get_learning_progress(
             intermediate_completed += 1
         elif difficulty == "advanced":
             advanced_completed += 1
-        if s.queries:
-            total_queries += len(s.queries)
-            for q in s.queries:
-                if isinstance(q, dict) and q.get("is_correct"):
+        
+        # Get questions for this session from SessionQuestion table
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == s.id
+        ).all()
+        
+        # Count total and correct queries
+        for question in session_questions:
+            if question.user_sql is not None:  # Only count answered questions
+                total_queries += 1
+                if question.is_correct:
                     correct_queries += 1
 
     accuracy_rate = round((correct_queries / total_queries) * 100, 2) if total_queries > 0 else 0.0
@@ -235,7 +247,7 @@ async def check_master_certificate_eligibility(
     #         "basic_sessions": 10,
     #         "intermediate_sessions": 5,
     #         "advanced_sessions": 2
-    #     }
+    #         }
     # }
     # --- END DUMMY TESTING RESPONSE ---
 
@@ -275,12 +287,17 @@ async def check_master_certificate_eligibility(
     }
     
     for session in sessions:
-        if session.queries:
-            for query in session.queries:
-                if isinstance(query, dict):
-                    total_queries += 1
-                    if query.get("is_correct"):
-                        correct_queries += 1
+        # Get questions for this session from SessionQuestion table
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == session.id
+        ).all()
+        
+        # Count total and correct queries
+        for question in session_questions:
+            if question.user_sql is not None:  # Only count answered questions
+                total_queries += 1
+                if question.is_correct:
+                    correct_queries += 1
     
         if session.difficulty:
             difficulty_completion[session.difficulty] += 1
@@ -369,7 +386,7 @@ async def get_user_certificates(
     
     print(f"DEBUG: User {user_id} certificate access check: {feature_check}")
     
-    # Get all user's sessions (allow viewing for all users)
+    # Get all user's sessions with their questions
     sessions = db.query(DBSession).filter(
         DBSession.user_id == user_id
     ).all()
@@ -379,26 +396,31 @@ async def get_user_certificates(
     for session in sessions:
         print(f"DEBUG: Processing session {session.id} - Difficulty: {session.difficulty}")
         
+        # Get questions for this session from SessionQuestion table
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == session.id
+        ).all()
+        
         # Calculate score percentage - only count answered questions
-        total_queries = len(session.queries)
-        answered_queries = [q for q in session.queries if isinstance(q, dict) and q.get("sql")]  # Check for "sql" field, not "user_query"
-        correct_queries = sum(1 for q in answered_queries if q.get("is_correct"))
+        total_questions = len(session_questions)
+        answered_questions = [q for q in session_questions if q.user_sql is not None]
+        correct_questions = sum(1 for q in answered_questions if q.is_correct)
 
         # Use answered questions for score calculation
-        score_percentage = (correct_queries / len(answered_queries) * 100) if len(answered_queries) > 0 else 0
+        score_percentage = (correct_questions / len(answered_questions) * 100) if len(answered_questions) > 0 else 0
 
-        print(f"🔍 DEBUG: Session {session.id} - Total questions: {total_queries}, Answered: {len(answered_queries)}, Correct: {correct_queries}, Score: {score_percentage}%")
+        print(f"🔍 DEBUG: Session {session.id} - Total questions: {total_questions}, Answered: {len(answered_questions)}, Correct: {correct_questions}, Score: {score_percentage}%")
 
         # Only give certificate for sessions where user actually answered questions
-        if len(answered_queries) > 0:
+        if len(answered_questions) > 0:
             cert = {
                 "id": session.id,
                 "session_id": session.id,
                 "title": f"{session.difficulty.title() if session.difficulty else 'Basic'} SQL Practice Session",
                 "difficulty": session.difficulty or "basic",
                 "score": round(score_percentage, 1),  # This is what frontend displays as percentage
-                "total_points": len(answered_queries),  # Use answered questions count
-                "correct_answers": correct_queries,
+                "total_points": len(answered_questions),  # Use answered questions count
+                "correct_answers": correct_questions,
                 "completion_date": session.created_at.isoformat(),
                 "topic": session.difficulty.title() if session.difficulty else "General",
                 "certificate_url": f"/api/achievements/certificate/{session.id}",
@@ -503,13 +525,18 @@ async def get_certificate(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    if not session.queries or len(session.queries) == 0:
-        raise HTTPException(status_code=400, detail="No completed questions in this session")
+    # Get questions for this session from SessionQuestion table
+    session_questions = db.query(SessionQuestion).filter(
+        SessionQuestion.session_id == session_id
+    ).all()
+    
+    if not session_questions or len(session_questions) == 0:
+        raise HTTPException(status_code=400, detail="No questions found in this session")
     
     # Calculate session stats - only count answered questions
-    total_questions = len(session.queries)
-    answered_questions = [q for q in session.queries if isinstance(q, dict) and q.get("user_query")]
-    correct_answers = sum(1 for q in answered_questions if q.get("is_correct"))
+    total_questions = len(session_questions)
+    answered_questions = [q for q in session_questions if q.user_sql is not None]
+    correct_answers = sum(1 for q in answered_questions if q.is_correct)
     
     # Use answered questions for score calculation
     score_percentage = (correct_answers / len(answered_questions) * 100) if len(answered_questions) > 0 else 0
