@@ -10,7 +10,6 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
-import { Leaderboard } from '../components/Leaderboard';
 import MasterCertificateCard from '../components/MasterCertificateCard';
 
 export const AchievementsPage: React.FC = () => {
@@ -538,11 +537,6 @@ export const AchievementsPage: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Leaderboard */}
-        <div className="lg:col-span-1">
-          <Leaderboard entries={[]} />
         </div>
       </div>
     </div>

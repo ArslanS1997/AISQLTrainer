@@ -32,8 +32,38 @@ interface CertificateProps {
 }
 
 export const Certificate: React.FC<CertificateProps> = ({ userName, type, session, competition, master }) => {
-  const handlePrint = () => {
-    window.print();
+  // Add a print function that isolates the current certificate
+  // Remove the handlePrint function and use window.print() directly
+  // Add a download PDF function
+
+  // Add this function to handle LinkedIn sharing with proper type checking
+  const handleLinkedInShare = () => {
+    const cert = session || competition || master;
+    if (!cert) return;
+    
+    // Handle different certificate types
+    let certificateText = '';
+    let certificateTitle = '';
+    
+    if ('title' in cert && 'score' in cert) {
+      // Session certificate
+      certificateText = `I just completed ${cert.title} with a score of ${cert.score}% on SQLTutor AI! 🎉 #SQL #Learning #Certification`;
+      certificateTitle = cert.title;
+    } else if ('date' in cert) {
+      // Competition certificate
+      certificateText = `I just won an SQL Competition on SQLTutor AI! 🏆 #SQL #Competition #Victory`;
+      certificateTitle = 'SQL Competition Victory';
+    } else {
+      // Fallback
+      certificateText = `I just earned a certificate on SQLTutor AI! 🎉 #SQL #Learning #Certification`;
+      certificateTitle = 'SQL Certificate';
+    }
+    
+    // LinkedIn sharing URL
+    const linkedInUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}&title=${encodeURIComponent(certificateTitle)}&summary=${encodeURIComponent(certificateText)}`;
+    
+    // Open LinkedIn sharing in a new window
+    window.open(linkedInUrl, '_blank', 'width=600,height=600');
   };
 
   const renderSessionCertificate = () => (
@@ -183,17 +213,22 @@ export const Certificate: React.FC<CertificateProps> = ({ userName, type, sessio
   return (
     <div className="min-h-screen bg-gray-50 py-4">
       <div className="max-w-4xl mx-auto">
-        {/* Print Button */}
-        <div className="text-center mb-4 print:hidden">
+        {/* Certificate Preview Header with Buttons */}
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-800">Certificate Preview</h2>
+          
           <button
-            onClick={handlePrint}
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+            onClick={handleLinkedInShare}
+            className="bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm flex items-center space-x-2"
           >
-            Print Certificate
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+            </svg>
+            <span>Share on LinkedIn</span>
           </button>
         </div>
-        
-        {/* Certificate */}
+
+        {/* Certificate Content */}
         <div className="bg-white border-8 border-blue-600 rounded-lg p-8 shadow-lg print:shadow-none print:border-4">
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-blue-600 rounded-full mx-auto mb-3 flex items-center justify-center">
