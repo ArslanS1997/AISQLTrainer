@@ -207,8 +207,7 @@ export const CertificatePage: React.FC = () => {
         
         {/* Small print */}
         <p className="text-sm text-gray-500 mt-6">
-          You can still earn certificates by completing practice sessions with 70%+ accuracy.
-          Upgrade anytime to download and share them!
+          Upgrade to earn certificates
         </p>
       </div>
     </div>
