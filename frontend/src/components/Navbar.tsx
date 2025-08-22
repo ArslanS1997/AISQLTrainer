@@ -34,9 +34,9 @@ export const Navbar: React.FC = () => {
   });
 
   const navigation = [
+    { name: 'Compete', href: '/compete', icon: Trophy },
     { name: 'Practice', href: '/practice', icon: Database },
     { name: 'Achievements', href: '/achievements', icon: BarChart3 },
-    { name: 'Compete', href: '/compete', icon: Trophy },
     { name: 'Certificates', href: '/certificate', icon: Award },
     // { name: 'Subscription', href: '/subscription', icon: CreditCard },
   ];

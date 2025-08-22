@@ -41,7 +41,7 @@ const AuthRedirectHandler: React.FC = () => {
   useEffect(() => {
     // If user just logged in and we're on the landing page, redirect to practice
     if (user && window.location.pathname === '/') {
-      navigate('/practice', { replace: true });
+      navigate('/compete', { replace: true });
     }
   }, [user, navigate]);
 
