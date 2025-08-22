@@ -165,7 +165,6 @@ export const CertificatePage: React.FC = () => {
             <ul className="space-y-2 text-sm text-gray-600">
               <li>✅ Practice SQL queries</li>
               <li>✅ Get instant feedback</li>
-              <li>✅ Earn certificates (view only)</li>
               <li>❌ Download certificates</li>
               <li>❌ LinkedIn integration</li>
               <li>❌ Master certificate</li>
