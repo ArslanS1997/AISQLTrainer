@@ -22,7 +22,7 @@ export const PaymentFailurePage: React.FC = () => {
             Try Again
           </Button>
           <Button 
-            onClick={() => navigate('/main')}
+            onClick={() => navigate('/practice')}
             variant="outline"
             className="w-full"
           >
