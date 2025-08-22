@@ -535,7 +535,7 @@ const getSessionProgress = () => {
         <div className="max-w-2xl mx-auto mb-6"> {/* Change back from w-full */}
           <div className="flex justify-between items-center bg-blue-50 px-4 py-3 rounded-lg border border-blue-200">
             <div className="text-sm text-gray-600">
-              <span className="font-medium text-blue-700">Schema Generations</span>
+              <span className="font-medium text-blue-700">Schema Generations (10 Questions per schema)</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-sm font-medium text-blue-700">
