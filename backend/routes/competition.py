@@ -642,7 +642,7 @@ async def get_competition_history(
     history = []
     for c in competitions:
         history.append(CompetitionHistoryResponse(
-            competition_id=c.competition_id,
+            competition_id=c.id,
             difficulty=c.difficulty,
             score=c.user_score,
             result=c.result,
