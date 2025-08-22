@@ -436,7 +436,7 @@ async def get_user_certificates(
     # Return certificates for all users, but indicate upgrade requirement for downloading
     return {
         "certificates": certificates,
-        "requires_upgrade": feature_check["allowed"],
+        "requires_upgrade": not feature_check["allowed"],
         "user_plan": feature_check.get("current_plan", "free")
     }
 
