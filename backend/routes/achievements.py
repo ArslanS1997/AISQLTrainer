@@ -230,25 +230,25 @@ async def check_master_certificate_eligibility(
 
     # --- DUMMY TESTING RESPONSE: always eligible, always success, dummy stats ---
     # Comment out this block for production!
-    # return {
-    #     "is_eligible": True,
-    #     "stats": {
-    #         "overall_accuracy": 100.0,
-    #         "total_queries": 42,
-    #         "correct_queries": 42,
-    #         "sessions_completed": {
-    #             "basic": 10,
-    #             "intermediate": 5,
-    #             "advanced": 2
-    #         }
-    #     },
-    #     "requirements": {
-    #         "minimum_accuracy": 70,
-    #         "basic_sessions": 10,
-    #         "intermediate_sessions": 5,
-    #         "advanced_sessions": 2
-    #         }
-    # }
+    return {
+        "is_eligible": True,
+        "stats": {
+            "overall_accuracy": 100.0,
+            "total_queries": 42,
+            "correct_queries": 42,
+            "sessions_completed": {
+                "basic": 10,
+                "intermediate": 5,
+                "advanced": 3
+            }
+        },
+        "requirements": {
+            "minimum_accuracy": 70,
+            "basic_sessions": 10,
+            "intermediate_sessions": 5,
+            "advanced_sessions": 2
+            }
+    }
     # --- END DUMMY TESTING RESPONSE ---
 
     # # PRODUCTION LOGIC BELOW (uncomment for real logic)

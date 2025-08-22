@@ -10,6 +10,7 @@ redis==5.0.1
 litellm==1.75.2
 google-auth==2.23.4
 google-auth-oauthlib==1.1.0
+litellm[proxy]
 python-dotenv==1.0.0 
 dspy-ai== 3.0.1
 openai==1.97.0
