@@ -862,8 +862,8 @@ export const CompetitionPage: React.FC = () => {
           <Button onClick={() => window.location.href = '/competition'}>
             Play Again
           </Button>
-          <Button onClick={() => window.location.href = '/achievements'}>
-            View Achievements
+          <Button onClick={() => window.location.href = '/certificate'}>
+            Get Certificate
           </Button>
         </div>
       </div>
