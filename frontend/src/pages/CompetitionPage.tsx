@@ -1379,7 +1379,7 @@ export const CompetitionPage: React.FC = () => {
                 <Timer className="h-5 w-5 text-blue-500 mt-0.5" />
                 <div>
                   <div className="font-medium">Time Limits</div>
-                  <div className="text-sm text-secondary-600">You get 3 minutes total, AI gets 30 seconds per question</div>
+                  <div className="text-sm text-secondary-600">You get 3 minutes per question, AI gets 30 seconds per question</div>
                 </div>
               </div>
               
