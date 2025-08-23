@@ -11,6 +11,7 @@ import os
 from models.schemas import GoogleAuthRequest, UserResponse, SuccessResponse
 from utils.auth import verify_google_token, create_access_token, get_user_from_token
 from utils.subscription_service import SubscriptionService
+from utils.cache_decorators import cache_static_data, cache_with_key, invalidate_user_cache
 
 from models import User
 from models import SessionLocal
@@ -20,6 +21,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
 import requests
 import dspy
+from functools import wraps
+import hashlib
+import json
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -480,20 +484,17 @@ async def get_current_user_info(current_user: User = Depends(get_current_user), 
     }
 
 @router.get("/available-models")
-async def get_available_models(current_user: Any = Depends(get_current_user)):
-    """Get list of available AI models based on user's plan."""
-    subscription_service = SubscriptionService(db)
-    user_plan = subscription_service.get_user_plan(current_user.id)
-    plan_name = user_plan.get('name', 'free')
-    
-    if plan_name == 'free':
-        return {
-            'current_model': AI_MODELS['free']['name'],
-            'available_models': [AI_MODELS['free']]
+@cache_static_data(expire=3600)  # Cache for 1 hour
+async def get_available_models():
+    """Get available AI models with Redis caching."""
+    try:
+        models = {
+            "free": ["gpt-4o-mini"],
+            "pro": ["gpt-4o-mini", "gpt-4o", "gpt-4"],
+            "max": ["gpt-4o-mini", "gpt-4o", "gpt-4", "gpt-4-turbo"]
         }
-    
-    available_models = AI_MODELS[plan_name]
-    return {
-        'current_model': available_models[current_user.selected_model_index]['name'],
-        'available_models': available_models
-    }
+        
+        return {"models": models, "cached": True}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
