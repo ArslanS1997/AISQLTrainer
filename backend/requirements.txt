@@ -7,7 +7,6 @@ passlib[bcrypt]==1.7.4
 pydantic==2.8.0
 sqlalchemy==2.0.43
 psycopg2-binary==2.9.10
-redis==5.0.1
 litellm==1.75.8
 google-auth==2.23.4
 google-auth-oauthlib==1.1.0
