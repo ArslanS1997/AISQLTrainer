@@ -87,25 +87,45 @@ class populate_table(dspy.Signature):
 class basic_questions_gen(dspy.Signature):
     """
     You are part of an AI-powered SQL training system designed to help beginners learn SQL through guided practice.
+    Slightly More Advanced Competition Prompt
+
+Given:
+
+A DuckDB database schema (db_schema) which includes tables and their columns.
+
+An optional topic (topic) such as SELECT, WHERE, JOIN, GROUP BY, etc.
+
+Your task:
+
+Generate 10 SQL questions at a basic-to-intermediate level based on the provided schema and topic.
+
+Each question should require beginners to combine at least two SQL concepts or think carefully about query order.
+
+If the topic is "All," ensure variety across concepts such as:
+
+Selecting columns with simple expressions (aliases, concatenation, arithmetic)
+
+Filtering with WHERE using multiple conditions, ranges, or pattern matching (LIKE)
+
+Sorting with ORDER BY, including multiple columns or mixed ASC/DESC
+
+Using aggregate functions (COUNT, SUM, AVG, MIN, MAX) with GROUP BY and possibly HAVING
+
+Applying LIMIT and OFFSET (top-N queries or pagination)
+
+Writing simple INNER JOIN or LEFT JOIN queries between two tables
+
+Format:
+
+Output a List[str] of 10 questions.
+
+Each question must be self-contained and clearly worded, restating all necessary context.
+
+Questions must not build on each other — each one should stand independently.
+
+The difficulty should be slightly more advanced than beginner level, making the student combine simple concepts rather than using only one.
     
-    Given:
-    - A DuckDB database schema (`db_schema`) which includes tables and their columns.
-    - An optional topic (`topic`) such as SELECT, WHERE, JOIN, GROUP BY, etc.
 
-    Your task:
-    - Generate 10 beginner-level SQL questions based on the provided schema and topic.
-    - If the topic is 'All', cover a variety of fundamental SQL concepts like:
-        - SELECT specific columns
-        - Filtering with WHERE
-        - Sorting using ORDER BY
-        - Using aggregate functions like COUNT or SUM
-        - Limiting output with LIMIT
-
-    Format:
-    - Generate a List[str] of 10 questions
-    - Questions should be clearly worded and directly related to the schema.
-    -
-      - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     topic = dspy.InputField(desc="The SQL topic user wants to learn", default="All")
@@ -167,27 +187,43 @@ class hard_questions_gen(dspy.Signature):
 
 class competition_basic_questions_gen(dspy.Signature):
     """
-    You are part of an AI-powered SQL competition system designed to test beginners in head-to-head SQL challenges.
-    
-    Given:
-    - A DuckDB database schema (`db_schema`) which includes tables and their columns.
-    - An optional topic (`topic`) such as SELECT, WHERE, JOIN, GROUP BY, etc.
+Competition Prompt (Balanced Beginner Level):
 
-    Your task:
-    - Generate 5 beginner-level SQL questions for a timed competition round.
-    - Questions should be solvable within 2-3 minutes by a beginner.
-    - If the topic is 'All', cover fundamental SQL concepts like:
-        - SELECT specific columns
-        - Filtering with WHERE
-        - Sorting using ORDER BY
-        - Using aggregate functions like COUNT or SUM
-        - Limiting output with LIMIT
+You are part of an AI-powered SQL competition system designed to test beginners in head-to-head SQL challenges.
 
-    Format:
-    - Generate a List[str] of 5 competition questions
-    - Questions should be clearly worded and directly related to the schema.
-    - Each question should be independent and not build on previous ones.
-    - IF QUESTIONS ARE RELATED TO MAKE SURE TO RESTATE THE WHOLE QUESTION
+Given:
+
+A DuckDB database schema (db_schema) which includes tables and their columns.
+
+An optional topic (topic) such as SELECT, WHERE, JOIN, GROUP BY, etc.
+
+Your task:
+
+Generate 5 beginner SQL questions with a small twist for a timed competition round.
+
+Each question should take 2–g4 minutes to solve.
+
+If the topic is "All," cover fundamental SQL areas, including:
+
+Selecting specific columns and using simple expressions (e.g., column alias, arithmetic)
+
+Filtering with WHERE using basic conditions or ranges
+
+Sorting results with ORDER BY (possibly more than one column)
+
+Aggregating with COUNT, SUM, or AVG (optionally with GROUP BY)
+
+Limiting results with LIMIT
+
+Format:
+
+Output as a List[str] of 5 competition questions.
+
+Each question must be self-contained and clearly worded.
+
+Do not build one question on another — restate context each time.
+
+Difficulty should be basic but not trivial, encouraging beginners to think just a little beyond the obvious.
     """
     db_schema = dspy.InputField(desc="The schema of the DuckDB database")
     questions: List[str] = dspy.OutputField(desc="5 competition questions separated by commas for basic difficulty")

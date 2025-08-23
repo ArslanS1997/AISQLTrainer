@@ -36,7 +36,7 @@ AI_MODELS = {
     'free': {
         'provider': 'openai',
         'name': 'gpt-4o-mini',
-        'max_tokens': 5000,
+        'max_tokens': 6000,
         'api_key_env': 'OPENAI_API_KEY'
     },
     'pro': [
