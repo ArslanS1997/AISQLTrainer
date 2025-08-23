@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -28,6 +28,31 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     }
   };
 
+  // Add loading state
+  const [isUpgrading, setIsUpgrading] = useState(false);
+
+  const handleUpgrade = async (planName: string) => {
+    setIsUpgrading(true); // Show loading state
+    
+    try {
+      // Prevent any redirects
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Call your upgrade function without redirect
+      await handleSubscribe(planName);
+      
+      // Stay on current page, just close modal
+      onClose();
+      
+    } catch (error) {
+      console.error('Upgrade failed:', error);
+      // Show error message but don't redirect
+    } finally {
+      setIsUpgrading(false); // Hide loading state
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4">
@@ -45,10 +70,18 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               Cancel
             </button>
             <button
-              onClick={onUpgrade}
+              onClick={() => handleUpgrade('pro')}
+              disabled={isUpgrading}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
             >
-              Upgrade Now
+              {isUpgrading ? (
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </div>
+              ) : (
+                'Get Pro'
+              )}
             </button>
           </div>
         </div>
