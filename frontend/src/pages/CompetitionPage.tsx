@@ -227,6 +227,9 @@ export const CompetitionPage: React.FC = () => {
     }
   };
 
+  // Add state for pre-fetched final results
+  const [prefetchedFinalResults, setPrefetchedFinalResults] = useState<any>(null);
+
   // Fix the handleSubmitAnswer function to properly complete and fix the button state
   const handleSubmitAnswer = async (timeExpired: boolean = false) => {
     if (!competition.competitionId || !competition.user_query.trim()) {
@@ -352,6 +355,23 @@ export const CompetitionPage: React.FC = () => {
         // Set competition status to completed automatically
         setCompetition(prev => ({ ...prev, status: 'completed' }));
         
+        // PRE-FETCH FINAL RESULTS IMMEDIATELY
+        console.log(' Pre-fetching final results for instant loading...');
+        try {
+          const finalResultsResponse = await apiClient.getCompetitionResult({
+            competition_id: competition.competitionId!
+          });
+          
+          if (finalResultsResponse.data) {
+            console.log('✅ Final results pre-fetched and cached:', finalResultsResponse.data);
+            setPrefetchedFinalResults(finalResultsResponse.data);
+          } else {
+            console.warn('⚠️ Failed to pre-fetch final results:', finalResultsResponse.error);
+          }
+        } catch (prefetchError) {
+          console.warn('⚠️ Pre-fetching final results failed (non-critical):', prefetchError);
+        }
+        
       } else {
         // NOT THE FINAL ROUND - Automatically send AI response request for next question
         const nextRound = competition.current_round + 1;
@@ -383,7 +403,7 @@ export const CompetitionPage: React.FC = () => {
       }
       
     } catch (error) {
-      console.error('Error submitting answer:', error);
+      console.error('❌ Error in handleSubmitAnswer:', error);
     } finally {
       // CRITICAL: Always set loading to false to fix the button state
       setIsLoading(false);
@@ -721,18 +741,27 @@ export const CompetitionPage: React.FC = () => {
   // Add state for final results
   const [finalResults, setFinalResults] = useState<any>(null);
 
-  // Update the handleViewFinalResults function
+  // Update the handleViewFinalResults function to use pre-fetched data
   const handleViewFinalResults = async () => {
     console.log('handleViewFinalResults called!');
+    
+    // If we have pre-fetched results, use them immediately
+    if (prefetchedFinalResults) {
+      console.log('✅ Using pre-fetched final results for instant loading');
+      setFinalResults(prefetchedFinalResults);
+      setShowResults(true);
+      return;
+    }
+    
+    // Fallback to fetching from backend if no pre-fetched data
     if (!competition.competitionId) {
       console.log('No competition ID found:', competition.competitionId);
       return;
     }
     
     try {
-      console.log('Getting final results from backend for competition:', competition.competitionId);
+      console.log('🔄 Fetching final results from backend...');
       
-      // Call the backend to get final results
       const response = await apiClient.getCompetitionResult({
         competition_id: competition.competitionId
       });
@@ -751,7 +780,7 @@ export const CompetitionPage: React.FC = () => {
     }
   };
 
-  // Add the final results display
+  // Fix the query display sections to prevent border overflow
   if (showResults && finalResults) {
     return (
       <div className="max-w-6xl mx-auto p-6">
@@ -791,7 +820,7 @@ export const CompetitionPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Round-by-Round Results */}
+        {/* Round-by-Round Results with Fixed Border Overflow */}
         <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-6 mb-6">
           <h2 className="text-2xl font-semibold mb-4">Round-by-Round Results</h2>
           <div className="space-y-4">
@@ -825,7 +854,7 @@ export const CompetitionPage: React.FC = () => {
                       )}
                       Your Query
                     </h4>
-                    <pre className="text-sm bg-white p-2 rounded border">
+                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words">
                       {round.user_sql}
                     </pre>
                   </div>
@@ -839,7 +868,7 @@ export const CompetitionPage: React.FC = () => {
                       )}
                       AI Query
                     </h4>
-                    <pre className="text-sm bg-white p-2 rounded border">
+                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words">
                       {round.ai_sql}
                     </pre>
                   </div>
@@ -870,7 +899,7 @@ export const CompetitionPage: React.FC = () => {
     );
   }
 
-  // Update the round result display - show View Final Results button for final round
+  // Also fix the round result display section
   if (showRoundResult && currentRoundResult) {
     return (
       <div className="max-w-6xl mx-auto p-6">
@@ -903,12 +932,14 @@ export const CompetitionPage: React.FC = () => {
             )}
           </div>
 
-          {/* Results Summary with Symbols */}
+          {/* Results Summary with Fixed Border Overflow */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="font-semibold text-gray-700 mb-2">Your Query</h4>
               <div className={`p-3 rounded border ${currentRoundResult.human_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <code className="text-sm font-mono text-gray-800">{currentRoundResult.human_sql}</code>
+                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block">
+                  {currentRoundResult.human_sql}
+                </code>
               </div>
               <div className={`mt-2 text-sm font-medium ${currentRoundResult.human_correct ? 'text-green-600' : 'text-red-600'}`}>
                 {currentRoundResult.human_correct ? '✅ Correct' : '❌ Incorrect'}
@@ -918,7 +949,9 @@ export const CompetitionPage: React.FC = () => {
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="font-semibold text-gray-700 mb-2">AI Query</h4>
               <div className={`p-3 rounded border ${currentRoundResult.ai_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <code className="text-sm font-mono text-gray-800">{currentRoundResult.ai_sql}</code>
+                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block">
+                  {currentRoundResult.ai_sql}
+                </code>
               </div>
               <div className={`mt-2 text-sm font-medium ${currentRoundResult.ai_correct ? 'text-green-600' : 'text-red-600'}`}>
                 {currentRoundResult.ai_correct ? '✅ Correct' : '❌ Incorrect'}
