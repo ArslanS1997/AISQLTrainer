@@ -446,7 +446,7 @@ async def get_user_certificates(
     # Check if force refresh is requested
     if force_refresh:
         # Bypass cache, get fresh data
-        return await get_fresh_certificates(current_user.id, db)
+        return get_fresh_certificates(current_user.id, db)  # Remove await here
     
     # Normal caching behavior
     """Get user certificates with Redis caching."""

@@ -4,7 +4,7 @@ Handles User vs AI SQL competitions with binary win/lose outcomes.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import uuid
@@ -378,90 +378,86 @@ async def check_ai_response(
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Check if AI response is correct for a competition round."""
-    conn = get_competition_duckdb_conn(request.competition_id)
-    response_type = 'ai'
-    is_executable = False
-    is_correct = False
-    in_time = True  # AI responses are always "in time" since they're pre-generated
-    result = ''
-    explanation = ''
-    points = 0
-    round_num = request.round
-    difficulty_multiplier = {'basic': 1, "intermediate": 2, "advanced": 4}
-
-    # Get the stored AI SQL from the database
+    """Check if AI response is correct for a competition round (uses cached result)."""
+    # Get the stored AI SQL and correctness from the database
     round_record = db.query(CompetitionRound).filter(
         CompetitionRound.competition_id == request.competition_id,
-        CompetitionRound.round_number == round_num
+        CompetitionRound.round_number == request.round
     ).first()
     
     if not round_record or not round_record.ai_sql:
         raise HTTPException(status_code=404, detail="AI response not found for this round")
     
-    ai_sql = round_record.ai_sql  # Use stored SQL from DB
-
-    with dspy.context(lm=default_lm):
+    # Use cached results instead of re-computing
+    ai_sql = round_record.ai_sql
+    is_correct = round_record.ai_correct
+    explanation = round_record.explanation
+    points = round_record.ai_points or 0
+    is_executable = round_record.ai_sql is not None  # If we have SQL, it was executable
+    
+    # If we don't have cached correctness, compute it now (fallback)
+    if round_record.ai_correct is None:
+        print(f"⚠️ No cached correctness for round {request.round}, computing now...")
+        conn = get_competition_duckdb_conn(request.competition_id)
+        difficulty_multiplier = {'basic': 1, "intermediate": 2, "advanced": 4}
+        
         try:
             result = conn.execute(ai_sql).fetchdf().head().to_markdown(index=False)
             is_executable = True
-        except Exception as e:
-            explanation = await explanation_gen_agent(error_generated=str(e)[:400], faulty_sql=ai_sql)
-            explanation = explanation.explanation
             
-            # Update the round record with error information
-            if round_record:
-                round_record.ai_sql = ai_sql
-                round_record.ai_correct = False
-                round_record.explanation = explanation
-                round_record.ai_response_time = request.response_time
-                db.commit()
-            
-            return isCorrectCompResponse(
-                competition_id=request.competition_id,
-                response_type=response_type,
-                is_executable=is_executable,
-                is_correct=is_correct,
-                in_time=in_time,  # ADD THIS MISSING FIELD
-                round=round_num,
-                points=points,
-                result=result,
-                explanation=explanation,
-                ai_sql=ai_sql
+            correctness_response = await check_correct_agent(
+                question=request.question, 
+                sql=ai_sql, 
+                table_head=result
             )
-        
-        if is_executable:
-            response = await check_correct_agent(question=request.question, sql=ai_sql, table_head=result)
-            is_correct = response.is_correct
+            is_correct = correctness_response.is_correct
+            
             if is_correct:
-                explanation = response.explanation
+                explanation = correctness_response.explanation
             else:
-                explanation = await explanation_gen_agent(error_generated=response.explanation, faulty_sql=ai_sql)
-                explanation = explanation.explanation
-
-            points = difficulty_multiplier.get(request.difficulty.lower(), 1)
+                explanation_response = await explanation_gen_agent(
+                    error_generated=correctness_response.explanation, 
+                    faulty_sql=ai_sql
+                )
+                explanation = explanation_response.explanation
             
-            # Update the round record with results
-            if round_record:
-                round_record.ai_sql = ai_sql
-                round_record.ai_correct = is_correct
-                round_record.ai_points = points if is_correct else 0
-                round_record.explanation = explanation
-                round_record.ai_response_time = request.response_time
-                db.commit()
+            points = difficulty_multiplier.get(request.difficulty.lower(), 1) if is_correct else 0
             
-            return isCorrectCompResponse(
-                competition_id=request.competition_id,
-                response_type=response_type,
-                is_executable=is_executable,
-                is_correct=is_correct,
-                in_time=in_time,  # ADD THIS MISSING FIELD
-                round=round_num,
-                points=points,
-                result=result,
-                explanation=explanation,
-                ai_sql=ai_sql
+            # Cache the result for future use
+            round_record.ai_correct = is_correct
+            round_record.ai_points = points
+            round_record.explanation = explanation
+            db.commit()
+            
+        except Exception as e:
+            explanation_response = await explanation_gen_agent(
+                error_generated=str(e)[:400], 
+                faulty_sql=ai_sql
             )
+            explanation = explanation_response.explanation
+            is_correct = False
+            points = 0
+            
+            # Cache the error result
+            round_record.ai_correct = False
+            round_record.ai_points = 0
+            round_record.explanation = explanation
+            db.commit()
+    
+    print(f"🚀 Returning cached AI correctness: {is_correct}, points: {points}")
+    
+    return isCorrectCompResponse(
+        competition_id=request.competition_id,
+        response_type='ai',
+        is_executable=is_executable,
+        is_correct=is_correct,
+        in_time=True,  # AI responses are always "in time"
+        round=request.round,
+        points=points,
+        result='',  # We don't need to return the actual result here
+        explanation=explanation,
+        ai_sql=ai_sql
+    )
 
 
 @router.post("/ai-response", response_model=AICompetitionResponse)
@@ -470,7 +466,7 @@ async def generate_ai_response(
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Generate and store AI's competitive response."""
+    """Generate and store AI's competitive response with immediate correctness caching."""
     conn = get_competition_duckdb_conn(request.competition_id)
     
     # Verify competition exists
@@ -495,22 +491,81 @@ async def generate_ai_response(
     time_taken_ms = int((end_time - start_time) * 1000)
     in_time = time_taken_ms <= (request.time_limit * 1000)
     
+    ai_sql = response['sql']
+    
     # Store AI response in CompetitionRound
     round_record = db.query(CompetitionRound).filter(
         CompetitionRound.competition_id == request.competition_id,
-        CompetitionRound.round_number == request.round  # For now, assume round 1
+        CompetitionRound.round_number == request.round
     ).first()
     
     if round_record:
-        round_record.ai_sql = response['sql']
+        round_record.ai_sql = ai_sql
         round_record.ai_response_time = time_taken_ms
         db.commit()
     
+    # CACHE AI CORRECTNESS IMMEDIATELY
+    # This eliminates the need to re-compute correctness later
+    try:
+        # Check if SQL is executable
+        result = conn.execute(ai_sql).fetchdf().head().to_markdown(index=False)
+        is_executable = True
+        
+        # Check if answer is correct
+        correctness_response = await check_correct_agent(
+            question=request.question, 
+            sql=ai_sql, 
+            table_head=result
+        )
+        is_correct = correctness_response.is_correct
+        
+        if is_correct:
+            explanation = correctness_response.explanation
+        else:
+            explanation_response = await explanation_gen_agent(
+                error_generated=correctness_response.explanation, 
+                faulty_sql=ai_sql
+            )
+            explanation = explanation_response.explanation
+        
+        # Calculate points
+        difficulty_multiplier = {'basic': 1, "intermediate": 2, "advanced": 4}
+        points = difficulty_multiplier.get(request.difficulty.lower(), 1) if is_correct else 0
+        
+        # Update the round record with ALL results (including correctness)
+        if round_record:
+            round_record.ai_sql = ai_sql
+            round_record.ai_correct = is_correct
+            round_record.ai_points = points
+            round_record.explanation = explanation
+            round_record.ai_response_time = time_taken_ms
+            db.commit()
+            
+        print(f"✅ AI response cached with correctness: {is_correct}, points: {points}")
+        
+    except Exception as e:
+        # Handle SQL execution errors
+        explanation_response = await explanation_gen_agent(
+            error_generated=str(e)[:400], 
+            faulty_sql=ai_sql
+        )
+        explanation = explanation_response.explanation
+        
+        # Update the round record with error information
+        if round_record:
+            round_record.ai_sql = ai_sql
+            round_record.ai_correct = False
+            round_record.explanation = explanation
+            round_record.ai_response_time = time_taken_ms
+            db.commit()
+        
+        print(f"❌ AI response cached with error: {str(e)[:100]}")
+    
     return AICompetitionResponse(
         competition_id=request.competition_id,
-        answer=response['sql'],
+        answer=ai_sql,
         difficulty=request.difficulty,
-        round= request.round, 
+        round=request.round, 
         in_time=in_time
     )
 
@@ -644,10 +699,11 @@ async def get_competition_history(
         history.append(CompetitionHistoryResponse(
             competition_id=c.id,
             difficulty=c.difficulty,
-            score=c.user_score,
+            user_score=c.user_score or 0,  # Fix: use user_score instead of score
+            ai_score=c.ai_score or 0,      # Fix: add ai_score field
             result=c.result,
             completed_at=c.completed_at,
-            total_time_taken=c.total_time_taken,
+            total_time_taken=c.total_time_taken or 0,  # Add default value
             questions=c.questions
         ))
     
