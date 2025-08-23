@@ -1,46 +1,32 @@
 import React, { useState } from 'react';
+import { Button } from './Button';
+import { useUpgrade } from '../contexts/UpgradeContext';
 
 interface UpgradeModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onUpgrade: () => void;
   feature: string;
   currentPlan: string;
+  onClose: () => void;
 }
 
-export const UpgradeModal: React.FC<UpgradeModalProps> = ({
-  isOpen,
-  onClose,
-  onUpgrade,
-  feature,
-  currentPlan
+export const UpgradeModal: React.FC<UpgradeModalProps> = ({ 
+  feature, 
+  currentPlan, 
+  onClose 
 }) => {
-  if (!isOpen) return null;
-
-  const getUpgradeMessage = (feature: string, plan: string) => {
-    switch (feature) {
-      case 'schema':
-        return `Upgrade from ${plan} plan to generate more schemas`;
-      case 'premium_models':
-        return `Upgrade from ${plan} plan to access premium AI models`;
-      default:
-        return `Upgrade from ${plan} plan to access more features`;
-    }
-  };
-
-  // Add loading state
+  // Move useState to the top level - never inside conditionals
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const { showUpgradeModal } = useUpgrade();
 
-  const handleUpgrade = async (planName: string) => {
+  const handleUpgrade = async (planName: string, event: React.MouseEvent) => {
+    // Prevent default behavior and stop propagation
+    event.preventDefault();
+    event.stopPropagation();
+    
     setIsUpgrading(true); // Show loading state
     
     try {
-      // Prevent any redirects
-      event.preventDefault();
-      event.stopPropagation();
-      
       // Call your upgrade function without redirect
-      await handleSubscribe(planName);
+      await showUpgradeModal(planName, currentPlan);
       
       // Stay on current page, just close modal
       onClose();
@@ -53,38 +39,68 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     }
   };
 
+  const getFeatureDescription = () => {
+    switch (feature) {
+      case 'schema':
+        return 'Generate unlimited custom database schemas';
+      case 'competition':
+        return 'Participate in unlimited SQL competitions';
+      case 'certificate':
+        return 'Download and share your certificates';
+      default:
+        return 'Access premium features';
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen px-4">
-        <div className="fixed inset-0 bg-black opacity-30" onClick={onClose}></div>
-        <div className="relative bg-white rounded-lg p-8 max-w-md w-full">
-          <h3 className="text-lg font-semibold mb-2">Upgrade Required</h3>
-          <p className="text-gray-600 mb-6">
-            {getUpgradeMessage(feature, currentPlan)}
-          </p>
-          <div className="flex justify-end space-x-4">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => handleUpgrade('pro')}
-              disabled={isUpgrading}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-            >
-              {isUpgrading ? (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Processing...
-                </div>
-              ) : (
-                'Get Pro'
-              )}
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          Upgrade to {currentPlan === 'free' ? 'Pro' : 'Max'}
+        </h2>
+        
+        <p className="text-gray-600 mb-6">
+          {getFeatureDescription()}
+        </p>
+
+        <div className="space-y-3">
+          <Button
+            onClick={(e) => handleUpgrade('pro', e)}
+            disabled={isUpgrading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium"
+          >
+            {isUpgrading ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Processing...
+              </div>
+            ) : (
+              'Get Pro'
+            )}
+          </Button>
+
+          <Button
+            onClick={(e) => handleUpgrade('max', e)}
+            disabled={isUpgrading}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg font-medium"
+          >
+            {isUpgrading ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Processing...
+              </div>
+            ) : (
+              'Get Max'
+            )}
+          </Button>
         </div>
+
+        <button
+          onClick={onClose}
+          className="mt-4 text-gray-500 hover:text-gray-700 text-sm"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
