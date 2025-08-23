@@ -1233,7 +1233,7 @@ export const CompetitionPage: React.FC = () => {
         )}
 
         {/* Certificate or Upgrade - Fixed premium check */}
-        {isPremiumUser() ? (
+        {isPremiumUser ? (
           <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border border-yellow-200 rounded-lg p-6 mb-8">
             <div className="flex items-center space-x-4">
               <Award className="h-8 w-8 text-yellow-600" />

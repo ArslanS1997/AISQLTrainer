@@ -1,104 +1,88 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserSubscription } from '../types';
 import { apiClient } from '../utils/api';
+import { cacheManager } from '../utils/cache'; // Fix the import path
 
 interface SubscriptionContextType {
   subscription: UserSubscription | null;
   loading: boolean;
   error: string | null;
+  isPremiumUser: boolean;
   refetchSubscription: () => Promise<void>;
-  refreshSubscription: () => Promise<void>; // ADD THIS LINE
-  isPremiumUser: () => boolean;
+  upgradePlan: (planName: string) => Promise<any>;
 }
 
-const SubscriptionContext = createContext<SubscriptionContextType>({
-  subscription: null,
-  loading: false,
-  error: null,
-  refetchSubscription: async () => {},
-  refreshSubscription: async () => {},
-  isPremiumUser: () => false,
-});
+const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
+
+export const useSubscription = () => {
+  const context = useContext(SubscriptionContext);
+  if (context === undefined) {
+    throw new Error('useSubscription must be used within a SubscriptionProvider');
+  }
+  return context;
+};
 
 export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSubscription = async () => {
+  // Compute isPremiumUser based on subscription plan
+  const isPremiumUser = subscription?.plan?.name === 'pro' || subscription?.plan?.name === 'max';
+
+  const refetchSubscription = async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      // Clear cache to force fresh data
+      cacheManager.invalidate('user_subscription');
+      
       const response = await apiClient.getUserSubscription();
       if (response.data) {
-        // Ensure plan name is normalized
-        const normalizedData = {
-          ...response.data,
-          plan: {
-            ...response.data.plan,
-            name: response.data.plan.name
-          }
-        };
-        setSubscription(normalizedData);
+        setSubscription(response.data);
       }
-    } catch (err) {
-      setError('Failed to fetch subscription');
-      console.error('Error fetching subscription:', err);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch subscription';
+      setError(errorMessage);
+      console.error('Failed to refetch subscription:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const isPremiumUser = () => {
-    if (!subscription?.plan) return false;
-    const planName = subscription.plan.name;
-    return planName === 'pro' || planName === 'max';
-  };
-
-  const refreshSubscription = async () => {
+  const upgradePlan = async (planName: string) => {
     try {
-      const response = await apiClient.getSubscriptionStatus();
-      if (response.data) {
-        setSubscription(response.data);
-      }
+      // For now, just refetch subscription
+      // You can implement the actual upgrade logic later
+      await refetchSubscription();
+      
+      return { success: true };
     } catch (error) {
-      console.error('Error refreshing subscription:', error);
+      console.error('Upgrade failed:', error);
+      throw error;
     }
   };
 
   useEffect(() => {
-    fetchSubscription();
-  }, []);
-
-  // Add a method to poll for subscription updates
-  useEffect(() => {
-    // Poll every 30 seconds when on payment success page
-    const isPaymentPage = window.location.pathname.includes('payment-success');
-    
-    if (isPaymentPage) {
-      const interval = setInterval(async () => {
-        await fetchSubscription();
-      }, 30000); // Poll every 30 seconds
-      
-      return () => clearInterval(interval);
-    }
+    refetchSubscription();
   }, []);
 
   return (
-    <SubscriptionContext.Provider value={{
-      subscription,
-      loading,
-      error,
-      refetchSubscription: fetchSubscription,
-      refreshSubscription,
-      isPremiumUser,
-    }}>
+    <SubscriptionContext.Provider
+      value={{
+        subscription,
+        loading,
+        error,
+        isPremiumUser,
+        refetchSubscription,
+        upgradePlan,
+      }}
+    >
       {children}
     </SubscriptionContext.Provider>
   );
 };
-
-export const useSubscription = () => useContext(SubscriptionContext);
 
 
 

@@ -72,7 +72,7 @@ export const ModelSelector = () => {
     );
   }
 
-  const canAccessPremiumModels = isPremiumUser();
+  const canAccessPremiumModels = isPremiumUser;
 
   return (
     <div className="relative" ref={ref}>

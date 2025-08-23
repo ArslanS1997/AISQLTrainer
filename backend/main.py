@@ -11,6 +11,7 @@ import dspy
 import uvicorn
 from utils.subscription_service import SubscriptionService
 from models import SessionLocal
+from config.redis_config import init_cache  # Add this import
 
 # Import routes
 from routes import (
@@ -24,9 +25,6 @@ load_dotenv()
 
 # Model configurations
 
-
-
-
 # Default model for non-authenticated routes
 default_lm = dspy.LM(
     model=f"{AI_MODELS['free']['provider']}/{AI_MODELS['free']['name']}", 
@@ -37,7 +35,7 @@ dspy.settings.configure(lm=default_lm, async_max_workers=25)
 
 app = FastAPI(
     title="SQL Trainer AI API",
-          description="Backend API for SQL Trainer AI application",
+    description="Backend API for SQL Trainer AI application",
     version="1.0.0"
 )
 
@@ -59,7 +57,6 @@ app.include_router(competition_router)
 app.include_router(dashboard_router)
 app.include_router(stripe_router)
 
-
 # ============================================================================
 # HEALTH CHECK
 # ============================================================================
@@ -72,6 +69,9 @@ async def health_check():
 # Add this to your app startup
 @app.on_event("startup")
 async def startup_event():
+    # Initialize Redis cache first
+    await init_cache()
+    
     # Populate plans if table is empty
     db = SessionLocal()
     try:
@@ -81,5 +81,4 @@ async def startup_event():
         db.close()
 
 if __name__ == "__main__":
- 
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

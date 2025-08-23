@@ -3,7 +3,7 @@ Dashboard routes for SQL Trainer AI backend.
 Handles user statistics, progress tracking, and analytics.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -15,14 +15,20 @@ from models.database import Competition
 from models.database import SessionQuestion
 
 from utils.subscription_service import SubscriptionService
+from utils.cache_decorators import cache_with_key, invalidate_user_cache, cache_with_smart_invalidation
+from utils.cache_decorators import generate_cache_key
+import json
+from functools import wraps
 
 router = APIRouter(prefix="/api/achievements", tags=["Achievements"])
 # Fix the average score calculation and remove rank (competition has no ranks, just points/wins)
 @router.get("/stats", response_model=DashboardStatsResponse)
+@cache_with_key(expire=300)  # Cache for 5 minutes
 async def get_dashboard_stats(
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Get user's dashboard stats with Redis caching."""
     user_id = current_user.id
 
     # Calculate average score from SessionQuestion table
@@ -84,10 +90,12 @@ async def get_dashboard_stats(
 
 
 @router.get("/progress", response_model=ProgressResponse)
+@cache_with_key(expire=300)  # Cache for 5 minutes
 async def get_learning_progress(
     current_user: Any = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Get learning progress with Redis caching."""
     """
     Get user's learning progress.
     Returns progress by difficulty, total queries, accuracy rate, learning path.
@@ -372,12 +380,76 @@ async def get_master_certificate(
     
     return certificate_data
 
+def get_fresh_certificates(user_id: str, db: Session) -> Dict[str, Any]:
+    """Helper function to get fresh certificate data."""
+    # Get all user's sessions with their questions
+    sessions = db.query(DBSession).filter(
+        DBSession.user_id == user_id
+    ).all()
+    
+    certificates = []
+    
+    for session in sessions:
+        print(f"DEBUG: Processing session {session.id} - Difficulty: {session.difficulty}")
+        
+        # Get questions for this session from SessionQuestion table
+        session_questions = db.query(SessionQuestion).filter(
+            SessionQuestion.session_id == session.id
+        ).all()
+        
+        # Calculate score percentage - only count answered questions
+        total_questions = len(session_questions)
+        answered_questions = [q for q in session_questions if q.user_sql is not None]
+        correct_questions = sum(1 for q in answered_questions if q.is_correct)
+
+        # Use answered questions for score calculation
+        score_percentage = (correct_questions / len(answered_questions) * 100) if len(answered_questions) > 0 else 0
+
+        print(f"🔍 DEBUG: Session {session.id} - Total questions: {total_questions}, Answered: {len(answered_questions)}, Correct: {correct_questions}, Score: {score_percentage}%")
+
+        # Only give certificate for sessions where user actually answered questions
+        if len(answered_questions) > 0:
+            cert = {
+                "id": session.id,
+                "session_id": session.id,
+                "title": f"{session.difficulty.title() if session.difficulty else 'Basic'} SQL Practice Session",
+                "difficulty": session.difficulty or "basic",
+                "score": round(score_percentage, 1),  # This is what frontend displays as percentage
+                "total_points": len(answered_questions),  # Use answered questions count
+                "correct_answers": correct_questions,
+                "completion_date": session.created_at.isoformat(),
+                "topic": session.difficulty.title() if session.difficulty else "General",
+                "certificate_url": f"/api/achievements/certificate/{session.id}",
+                "type": "session"
+            }
+            certificates.append(cert)
+            print(f"🔍 DEBUG: Added certificate for session {session.id} with score {score_percentage}%")
+        else:
+            print(f"🔍 DEBUG: Session {session.id} has no answered questions")
+    
+    print(f"DEBUG: Returning {len(certificates)} certificates")
+    
+    return {
+        "certificates": certificates,
+        "requires_upgrade": False, # No upgrade requirement for certificates
+        "user_plan": "premium" # Assuming premium for now
+    }
+
 @router.get("/certificates")
+@cache_with_smart_invalidation(expire=180)  # 3 minutes default
 async def get_user_certificates(
     current_user: Any = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    force_refresh: bool = Query(False)  # Allow force refresh
 ):
-    """Get all certificates earned by the user."""
+    """Get user certificates with smart caching."""
+    # Check if force refresh is requested
+    if force_refresh:
+        # Bypass cache, get fresh data
+        return get_fresh_certificates(current_user.id, db)  # Remove await here
+    
+    # Normal caching behavior
+    """Get user certificates with Redis caching."""
     user_id = current_user.id
     
     # Check if user has premium access for downloading

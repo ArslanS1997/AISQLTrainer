@@ -397,12 +397,7 @@ async def complete_session(
     db=Depends(get_db),
     current_user: Any = Depends(get_current_user)
 ):
-    """Mark a practice session as completed and calculate final score."""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    print(f"🔍 DEBUG: Completing session {session_id} for user {current_user.id}")
-    
+    """Complete session and update cache in real-time."""
     try:
         # Find the session
         db_session = db.query(DBSession).filter(
@@ -441,21 +436,25 @@ async def complete_session(
         
         print(f"✅ Session {session_id} completed successfully")
         
-        return {
-            "message": "Session completed successfully", 
-            "session_id": session_id,
-            "final_score": {
-                "total_questions": total_questions,
-                "correct_answers": correct_answers,
-                "total_points": total_points,
-                "score_percentage": round(score_percentage, 1)
-            }
-        }
+        # Immediately invalidate user's achievement caches
+        invalidate_user_cache(current_user.id)
+        
+        # Also invalidate specific caches
+        cache_keys_to_invalidate = [
+            f"get_dashboard_stats:user_{current_user.id}",
+            f"get_user_certificates:user_{current_user.id}",
+            f"get_learning_progress:user_{current_user.id}"
+        ]
+        
+        for key in cache_keys_to_invalidate:
+            redis_client.delete(key)
+        
+        print(f"✅ Cache invalidated for user {current_user.id}")
+        
+        return {"message": "Session completed successfully"}
         
     except Exception as e:
-        db.rollback()
-        print(f"❌ Error completing session {session_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to complete session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     
 
@@ -641,8 +640,6 @@ async def get_sessions(
             session_responses.append(
                 SessionResponse(
                     session_id=s.id,
-                    schema_id=s.schema_id,
-                    queries=s.queries,
                     total_score=s.total_score,
                     created_at=s.created_at,
                     completed_at=s.completed_at
