@@ -350,13 +350,13 @@ export const CompetitionPage: React.FC = () => {
       // COMPLETE THE FLOW: Handle final round completion or get AI response for next question
       if (competition.current_round === 5) {
         // FINAL ROUND COMPLETED - Mark as completed automatically
-        console.log('Final round completed, marking competition as completed...');
+        console.log('🎯 Final round completed, marking competition as completed...');
         
         // Set competition status to completed automatically
         setCompetition(prev => ({ ...prev, status: 'completed' }));
         
-        // PRE-FETCH FINAL RESULTS IMMEDIATELY
-        console.log(' Pre-fetching final results for instant loading...');
+        // 🚀 PRE-FETCH FINAL RESULTS IMMEDIATELY FOR INSTANT LOADING
+        console.log('⚡ Pre-fetching final results for instant access...');
         try {
           const finalResultsResponse = await apiClient.getCompetitionResult({
             competition_id: competition.competitionId!
@@ -365,6 +365,9 @@ export const CompetitionPage: React.FC = () => {
           if (finalResultsResponse.data) {
             console.log('✅ Final results pre-fetched and cached:', finalResultsResponse.data);
             setPrefetchedFinalResults(finalResultsResponse.data);
+            
+            // Show success message to user
+            console.log('🎉 Final results are ready! Click "View Final Results" for instant access.');
           } else {
             console.warn('⚠️ Failed to pre-fetch final results:', finalResultsResponse.error);
           }
@@ -375,7 +378,7 @@ export const CompetitionPage: React.FC = () => {
       } else {
         // NOT THE FINAL ROUND - Automatically send AI response request for next question
         const nextRound = competition.current_round + 1;
-        console.log(`Automatically sending AI response request for next question (round ${nextRound})...`);
+        console.log(`🔄 Automatically sending AI response request for next question (round ${nextRound})...`);
         
         // Send AI response request for next round in the background
         const aiResponse = await apiClient.getAIResponse({
@@ -388,7 +391,7 @@ export const CompetitionPage: React.FC = () => {
         });
         
         if (aiResponse.data) {
-          console.log(`AI response request sent for round ${nextRound}`);
+          console.log(`✅ AI response request sent for round ${nextRound}`);
           // Store the AI response
           setCompetition(prev => ({
             ...prev,
@@ -398,14 +401,22 @@ export const CompetitionPage: React.FC = () => {
             }
           }));
         } else {
-          console.error(`Failed to send AI response request for round ${nextRound}:`, aiResponse.error);
+          console.error(`❌ Failed to get AI response for round ${nextRound}:`, aiResponse.error);
         }
       }
+
+      // Clear the current question input
+      setCompetition(prev => ({ ...prev, user_query: '' }));
+      
+      // Move to next round if not the final round
+      if (competition.current_round < 5) {
+        setCompetition(prev => ({ ...prev, current_round: prev.current_round + 1 }));
+      }
+
+      setIsLoading(false);
       
     } catch (error) {
       console.error('❌ Error in handleSubmitAnswer:', error);
-    } finally {
-      // CRITICAL: Always set loading to false to fix the button state
       setIsLoading(false);
     }
   };
@@ -743,19 +754,22 @@ export const CompetitionPage: React.FC = () => {
 
   // Update the handleViewFinalResults function to use pre-fetched data
   const handleViewFinalResults = async () => {
-    console.log('handleViewFinalResults called!');
+    console.log('🔍 handleViewFinalResults called!');
     
-    // If we have pre-fetched results, use them immediately
+    // 🚀 PRIORITY 1: If we have pre-fetched results, use them immediately
     if (prefetchedFinalResults) {
-      console.log('✅ Using pre-fetched final results for instant loading');
+      console.log('⚡ Using pre-fetched final results for INSTANT loading!');
       setFinalResults(prefetchedFinalResults);
       setShowResults(true);
+      
+      // Clear the pre-fetched data since we're now using it
+      setPrefetchedFinalResults(null);
       return;
     }
     
-    // Fallback to fetching from backend if no pre-fetched data
+    // 🔄 PRIORITY 2: Fallback to fetching from backend if no pre-fetched data
     if (!competition.competitionId) {
-      console.log('No competition ID found:', competition.competitionId);
+      console.log('❌ No competition ID found:', competition.competitionId);
       return;
     }
     
@@ -767,15 +781,15 @@ export const CompetitionPage: React.FC = () => {
       });
       
       if (response.data) {
-        console.log('Final results retrieved successfully:', response.data);
+        console.log('✅ Final results retrieved successfully:', response.data);
         setFinalResults(response.data);
         setShowResults(true);
       } else {
-        console.error('Failed to get final results:', response.error);
+        console.error('❌ Failed to get final results:', response.error);
         alert('Failed to get final results. Please try again.');
       }
     } catch (error) {
-      console.error('Error getting final results:', error);
+      console.error('❌ Error getting final results:', error);
       alert('Error getting final results. Please try again.');
     }
   };
@@ -854,7 +868,7 @@ export const CompetitionPage: React.FC = () => {
                       )}
                       Your Query
                     </h4>
-                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words">
+                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words max-w-full">
                       {round.user_sql}
                     </pre>
                   </div>
@@ -868,7 +882,7 @@ export const CompetitionPage: React.FC = () => {
                       )}
                       AI Query
                     </h4>
-                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words">
+                    <pre className="text-sm bg-white p-2 rounded border overflow-x-auto whitespace-pre-wrap break-words max-w-full">
                       {round.ai_sql}
                     </pre>
                   </div>
@@ -937,7 +951,7 @@ export const CompetitionPage: React.FC = () => {
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="font-semibold text-gray-700 mb-2">Your Query</h4>
               <div className={`p-3 rounded border ${currentRoundResult.human_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block">
+                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block max-w-full">
                   {currentRoundResult.human_sql}
                 </code>
               </div>
@@ -949,7 +963,7 @@ export const CompetitionPage: React.FC = () => {
             <div className="bg-gray-50 p-4 rounded-lg">
               <h4 className="font-semibold text-gray-700 mb-2">AI Query</h4>
               <div className={`p-3 rounded border ${currentRoundResult.ai_correct ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block">
+                <code className="text-sm font-mono text-gray-800 overflow-x-auto whitespace-pre-wrap break-words block max-w-full">
                   {currentRoundResult.ai_sql}
                 </code>
               </div>
@@ -1158,18 +1172,41 @@ export const CompetitionPage: React.FC = () => {
     );
   }
 
-  // Update the round result display - make sure the button calls the function
-  // Add a button to view final results after competition ends
+  // Update the competition completion section to show pre-fetch status
   if (competition.status === 'completed' && !showResults) {
     return (
       <div className="max-w-6xl mx-auto p-6">
         <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 text-center mb-8">
           <Trophy className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-secondary-900 mb-4">Competition Completed!</h1>
-          <p className="text-secondary-600 mb-6">Click below to view your final results and get your certificate.</p>
+          <h1 className="text-3xl font-bold text-secondary-900 mb-4">Competition Completed! 🎉</h1>
           
-          <Button onClick={handleViewFinalResults} className="bg-blue-600 hover:bg-blue-700">
-            View Final Results
+          {/* Show pre-fetch status */}
+          {prefetchedFinalResults ? (
+            <div className="mb-6">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-center space-x-2 text-green-700">
+                  <Zap className="h-5 w-5" />
+                  <span className="font-medium">Results are ready for instant viewing!</span>
+                </div>
+              </div>
+              <p className="text-secondary-600 mb-6">Your final results have been pre-loaded and are ready to view immediately.</p>
+            </div>
+          ) : (
+            <p className="text-secondary-600 mb-6">Click below to view your final results and get your certificate.</p>
+          )}
+          
+          <Button 
+            onClick={handleViewFinalResults} 
+            className={`${prefetchedFinalResults ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {prefetchedFinalResults ? (
+              <>
+                <Zap className="h-4 w-4 mr-2" />
+                View Final Results (Instant!)
+              </>
+            ) : (
+              'View Final Results'
+            )}
           </Button>
         </div>
       </div>

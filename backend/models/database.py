@@ -2,7 +2,7 @@
 Database models for SQL Trainer AI backend using SQLAlchemy ORM.
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text, ForeignKey, JSON, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -34,6 +34,15 @@ class User(Base):
     sessions = relationship("Session", back_populates="user")
     competition_submissions = relationship("Competition", back_populates="user")
     subscriptions = relationship("Subscription", back_populates="user")
+    
+    # Indexes for frequent lookups
+    __table_args__ = (
+        Index('idx_user_email', 'email'),  # Fast login lookups
+        Index('idx_user_stripe_customer', 'stripe_customer_id'),  # Stripe operations
+        Index('idx_user_subscription_plan', 'subscription_plan_id'),  # Plan queries
+        Index('idx_user_created_at', 'created_at'),  # User analytics
+        Index('idx_user_points', 'points'),  # Leaderboards
+    )
 
 class Session(Base):
     """Practice session model for storing user practice sessions."""
@@ -53,7 +62,15 @@ class Session(Base):
     # Relationships
     user = relationship("User", back_populates="sessions")
     questions = relationship("SessionQuestion", back_populates="session", order_by="SessionQuestion.question_number")
-
+    
+    # Indexes for session queries
+    __table_args__ = (
+        Index('idx_session_user_id', 'user_id'),  # User's sessions
+        Index('idx_session_difficulty', 'difficulty'),  # Filter by difficulty
+        Index('idx_session_created_at', 'created_at'),  # Session analytics
+        Index('idx_session_completed_at', 'completed_at'),  # Completed sessions
+        Index('idx_session_user_difficulty', 'user_id', 'difficulty'),
+    )
 
 class Competition(Base):
     """Competition model for user vs AI competitions."""
@@ -98,7 +115,21 @@ class Competition(Base):
     # Relationships
     user = relationship("User", back_populates="competition_submissions")
     rounds = relationship("CompetitionRound", back_populates="competition", cascade="all, delete-orphan")
-
+    
+    # Critical indexes for competition queries
+    __table_args__ = (
+        Index('idx_competition_user_id', 'user_id'),  # User's competitions
+        Index('idx_competition_status', 'status'),  # Active/completed competitions
+        Index('idx_competition_difficulty', 'difficulty'),  # Filter by difficulty
+        Index('idx_competition_expires_at', 'expires_at'),  # Expired competitions cleanup
+        Index('idx_competition_started_at', 'started_at'),  # Competition analytics
+        Index('idx_competition_user_score', 'user_score'),  # Leaderboards
+        Index('idx_competition_completed_at', 'completed_at'),  # Completed competitions
+        # Composite indexes for common query patterns
+        Index('idx_competition_user_status', 'user_id', 'status'),
+        Index('idx_competition_user_difficulty', 'user_id', 'difficulty'),
+        Index('idx_competition_status_expires', 'status', 'expires_at'),
+    )
 
 class CompetitionRound(Base):
     """Round-level model for each round in a competition."""
@@ -130,6 +161,13 @@ class CompetitionRound(Base):
 
     # Relationships
     competition = relationship("Competition", back_populates="rounds")
+    
+    # Indexes for round queries
+    __table_args__ = (
+        Index('idx_round_competition_round', 'competition_id', 'round_number'),
+        Index('idx_round_difficulty', 'difficulty'),
+        Index('idx_round_created_at', 'created_at'),
+    )
 
 
 
@@ -174,6 +212,14 @@ class UserUsage(Base):
     
     # Relationship to User (many-to-one)
     user = relationship("User", back_populates="usage_records")
+    
+    # Indexes for usage tracking
+    __table_args__ = (
+        Index('idx_usage_user_id', 'user_id'),  # User's usage
+        Index('idx_usage_year_month', 'year', 'month'),  # Monthly usage
+        Index('idx_usage_user_year_month', 'user_id', 'year', 'month'),  # User's monthly usage
+        Index('idx_usage_created_at', 'created_at'),  # Usage analytics
+    )
 
 class Subscription(Base):
     """Subscription model for storing user subscriptions."""
@@ -192,6 +238,17 @@ class Subscription(Base):
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
+    
+    # Indexes for subscription queries
+    __table_args__ = (
+        Index('idx_subscription_user_id', 'user_id'),  # User's subscriptions
+        Index('idx_subscription_status', 'status'),  # Active subscriptions
+        Index('idx_subscription_plan', 'plan'),  # Filter by plan
+        Index('idx_subscription_period_end', 'current_period_end'),  # Expiring subscriptions
+        Index('idx_subscription_stripe_id', 'stripe_subscription_id'),  # Stripe operations
+        Index('idx_subscription_user_status', 'user_id', 'status'),
+        Index('idx_subscription_status_period', 'status', 'current_period_end'),
+    )
 
 
 
@@ -226,4 +283,10 @@ class SessionQuestion(Base):
     # Composite unique constraint (only when session_id is not null)
     __table_args__ = (
         CheckConstraint('session_id IS NOT NULL OR question_number IS NOT NULL', name='valid_question'),
+        Index('idx_question_session_id', 'session_id'),  # Questions in session
+        Index('idx_question_difficulty', 'difficulty'),  # Filter by difficulty
+        Index('idx_question_topic', 'topic'),  # Filter by topic
+        Index('idx_question_is_correct', 'is_correct'),  # Performance analytics
+        Index('idx_question_answered_at', 'answered_at'),  # Response time analytics
+        Index('idx_question_session_difficulty', 'session_id', 'difficulty'),
     )
