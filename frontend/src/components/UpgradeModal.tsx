@@ -3,41 +3,41 @@ import { Button } from './Button';
 import { useUpgrade } from '../contexts/UpgradeContext';
 
 interface UpgradeModalProps {
+  isOpen: boolean;           // Add this
   feature: string;
   currentPlan: string;
   onClose: () => void;
+  onUpgrade: (planName: string) => void;  // Add this
 }
 
 export const UpgradeModal: React.FC<UpgradeModalProps> = ({ 
+  isOpen,           // Add this
   feature, 
   currentPlan, 
-  onClose 
+  onClose,
+  onUpgrade         // Add this
 }) => {
-  // Move useState to the top level - never inside conditionals
   const [isUpgrading, setIsUpgrading] = useState(false);
-  const { showUpgradeModal } = useUpgrade();
 
-  const handleUpgrade = async (planName: string, event: React.MouseEvent) => {
-    // Prevent default behavior and stop propagation
-    event.preventDefault();
-    event.stopPropagation();
-    
-    setIsUpgrading(true); // Show loading state
+  const handleUpgrade = async (planName: string) => {
+    setIsUpgrading(true);
     
     try {
-      // Call your upgrade function without redirect
-      await showUpgradeModal(planName, currentPlan);
+      // Call the onUpgrade prop instead of showUpgradeModal
+      await onUpgrade(planName);
       
-      // Stay on current page, just close modal
+      // Close modal after successful upgrade
       onClose();
       
     } catch (error) {
       console.error('Upgrade failed:', error);
-      // Show error message but don't redirect
     } finally {
-      setIsUpgrading(false); // Hide loading state
+      setIsUpgrading(false);
     }
   };
+
+  // Only render if modal is open
+  if (!isOpen) return null;
 
   const getFeatureDescription = () => {
     switch (feature) {
@@ -65,7 +65,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
         <div className="space-y-3">
           <Button
-            onClick={(e) => handleUpgrade('pro', e)}
+            onClick={() => handleUpgrade('pro')}
             disabled={isUpgrading}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-6 rounded-lg font-medium"
           >
@@ -80,7 +80,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </Button>
 
           <Button
-            onClick={(e) => handleUpgrade('max', e)}
+            onClick={() => handleUpgrade('max')}
             disabled={isUpgrading}
             className="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-lg font-medium"
           >
