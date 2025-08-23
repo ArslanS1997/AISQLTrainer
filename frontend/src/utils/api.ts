@@ -4,6 +4,7 @@ import {
   AIModel,  // Add this import
   PlanName  // Also import this if needed
 } from '../types';
+import { cacheManager } from './cache';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:10000';
 
 console.log('Backend URL:', BACKEND_URL); // Add this for debugging
@@ -462,16 +463,46 @@ class APIClient {
   }
 
   // achievements API methods
-  async getachievementsStats(): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/achievements/stats');
+  async getachievementsStats() {
+    const cacheKey = 'achievements_stats';
+    const cached = cacheManager.get(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    const response = await this.request('/api/achievements/stats');
+    const data = response.data;
+    cacheManager.set(cacheKey, data, 300000); // 5 minutes
+    return data;
   }
 
-  async getLearningProgress(): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/achievements/progress');
+  async getLearningProgress() {
+    const cacheKey = 'achievements_progress';
+    const cached = cacheManager.get(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    const response = await this.request('/api/achievements/progress');
+    const data = response.data;
+    cacheManager.set(cacheKey, data, 300000); // 5 minutes
+    return data;
   }
 
-  async getRecentActivity(): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/achievements/recent-activity');
+  async getRecentActivity() {
+    const cacheKey = 'achievements_recent_activity';
+    const cached = cacheManager.get(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    const response = await this.request('/api/achievements/recent-activity');
+    const data = response.data;
+    cacheManager.set(cacheKey, data, 300000); // 5 minutes
+    return data;
   }
 
 
@@ -480,8 +511,18 @@ class APIClient {
     return this.request('/api/achievements/master-certificate-eligibility');
   }
 
-  async getUserCertificates(): Promise<{ data?: any; error?: string }> {
-    return this.request('/api/achievements/certificates');
+  async getUserCertificates() {
+    const cacheKey = 'user_certificates';
+    const cached = cacheManager.get(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    const response = await this.request('/api/achievements/certificates');
+    const data = response.data;
+    cacheManager.set(cacheKey, data, 180000); // 3 minutes
+    return data;
   }
 
   // Add this method to fetch competition certificates
@@ -687,6 +728,37 @@ class APIClient {
   async getCompetitionCertificate(competitionId: string): Promise<{ data?: any; error?: string }> {
     return this.request(`/api/achievements/competition-certificate/${competitionId}`);
   }
+
+  // Add the missing upgradeSubscription method
+  async upgradeSubscription(planName: string) {
+    try {
+      const response = await fetch(`${this.baseURL}/api/subscription/upgrade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+        },
+        body: JSON.stringify({ plan: planName })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Invalidate related caches
+      cacheManager.invalidate('user_subscription');
+      cacheManager.invalidate('subscription_plans');
+      
+      return data;
+    } catch (error) {
+      console.error('Upgrade subscription failed:', error);
+      throw error;
+    }
+  }
+
+
 }
 
 

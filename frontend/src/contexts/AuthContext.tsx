@@ -87,6 +87,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (userData.subscription) {
               setSubscription(userData.subscription);
               console.log('✅ Subscription loaded from auth:', userData.subscription.plan.name);
+              
+              // Trigger a custom event to notify other components
+              window.dispatchEvent(new CustomEvent('subscriptionUpdated', { 
+                detail: response.data 
+              }));
             } else {
               // If not available, fetch separately
               console.log('🔄 No subscription in auth response, fetching separately...');
@@ -99,6 +104,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               } catch (subErr) {
                 console.error('❌ Error fetching subscription:', subErr);
               }
+            }
+
+            // PRELOAD DATA FOR EXISTING AUTHENTICATED USERS
+            console.log('🚀 Preloading data for existing user...');
+            try {
+              await Promise.allSettled([
+                apiClient.getUserCertificates(),
+                apiClient.getachievementsStats(),
+                apiClient.getMasterCertificateEligibility(),
+                apiClient.getCompetitionHistory()
+              ]);
+              console.log('✅ Data preloaded for existing user');
+            } catch (preloadError) {
+              console.warn('⚠️ Preloading failed (non-critical):', preloadError);
             }
           }
         } catch (err) {
@@ -166,6 +185,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   } else {
                     console.log('⚠️ No subscription data in login response');
                   }
+
+                  // PRELOAD CERTIFICATES AND ACHIEVEMENTS DATA
+                  // This will cache the data on the backend for instant access later
+                  console.log('🚀 Preloading certificates and achievements data...');
+                  
+                  try {
+                    // Make API calls in parallel to cache the data
+                    await Promise.allSettled([
+                      apiClient.getUserCertificates(),
+                      apiClient.getachievementsStats(),
+                      apiClient.getMasterCertificateEligibility(),
+                      apiClient.getCompetitionHistory()
+                    ]);
+                    console.log('✅ All data preloaded and cached on backend');
+                  } catch (preloadError) {
+                    // Don't fail the login if preloading fails
+                    console.warn('⚠️ Preloading failed (non-critical):', preloadError);
+                  }
+                  
                 } else {
                   throw new Error('Failed to authenticate with backend: ' + (authResponse.error || 'Unknown error'));
                 }
