@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
@@ -30,11 +30,10 @@ const plans = [
     popular: true,
     features: [
       { text: '20 schema generations per month', included: true },
-      { text: '10 competitions per month', included: true },
+      { text: '20 competitions per month', included: true },
       { text: 'Latest AI models', included: true },
       { text: 'Certificate downloads', included: true },
       { text: 'Master certificate', included: true },
-      { text: 'Priority email support', included: true },
     ],
   },
   {
@@ -57,14 +56,18 @@ const plans = [
 ];
 
 const PricingPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading, signIn } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState<string | null>(null);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // Only show loading state if auth is still loading
+  const isLoading = authLoading;
 
   const handleSubscribe = async (planName: string) => {
     if (!user) {
-      // Redirect to login
-      window.location.href = '/';
+      // Show login prompt instead of redirecting
+      setShowLoginPrompt(true);
       return;
     }
 
@@ -89,8 +92,59 @@ const PricingPage: React.FC = () => {
     }
   };
 
+  const handleLogin = async () => {
+    try {
+      // Close the modal first to prevent multiple clicks
+      setShowLoginPrompt(false);
+      // Actually call the signIn function to trigger Google OAuth
+      await signIn();
+    } catch (error) {
+      console.error('Login failed:', error);
+      // Reopen the modal if login fails
+      setShowLoginPrompt(true);
+    }
+  };
+
+  // Show loading spinner while auth is being checked
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-12">
+      {/* Login Prompt Modal */}
+      {showLoginPrompt && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md mx-4 text-center">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">
+              Sign in to Continue
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Please sign in to subscribe to our premium plans and unlock advanced features.
+            </p>
+            <div className="space-y-3">
+              <Button
+                onClick={handleLogin}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Sign In with Google
+              </Button>
+              <Button
+                onClick={() => setShowLoginPrompt(false)}
+                variant="outline"
+                className="w-full"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-12">

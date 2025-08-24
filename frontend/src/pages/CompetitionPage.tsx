@@ -167,6 +167,73 @@ export const CompetitionPage: React.FC = () => {
     aiCheckResults: { 1: '', 2: '', 3: '', 4: '', 5: '' } // Add this
   });
 
+  // Add new state for cached data
+  const [competitionHistory, setCompetitionHistory] = useState<any[]>([]);
+  const [achievementsStats, setAchievementsStats] = useState<any>(null);
+  const [certificates, setCertificates] = useState<any[]>([]);
+  const [isLoadingCachedData, setIsLoadingCachedData] = useState(true);
+  const [isRefreshingData, setIsRefreshingData] = useState(false);
+
+  // Load cached data immediately and refresh in background
+  useEffect(() => {
+    const loadCachedData = async () => {
+      if (!user) return;
+
+      setIsLoadingCachedData(true);
+      
+      try {
+        // Load all cached data in parallel for immediate display
+        const [historyResponse, statsResponse, certsResponse] = await Promise.allSettled([
+          apiClient.getCompetitionHistory(),
+          apiClient.getachievementsStats(),
+          apiClient.getUserCertificates()
+        ]);
+
+        // Set data from successful responses (cached data loads instantly)
+        if (historyResponse.status === 'fulfilled' && historyResponse.value.data) {
+          setCompetitionHistory(historyResponse.value.data.competitions || []);
+        }
+        
+        if (statsResponse.status === 'fulfilled' && statsResponse.value.data) {
+          setAchievementsStats(statsResponse.value.data);
+        }
+        
+        if (certsResponse.status === 'fulfilled' && certsResponse.value.data) {
+          setCertificates(certsResponse.value.data);
+        }
+
+        setIsLoadingCachedData(false);
+
+        // Now refresh data in background to ensure freshness
+        setIsRefreshingData(true);
+        await refreshDataInBackground();
+        setIsRefreshingData(false);
+
+      } catch (error) {
+        console.error('Error loading cached data:', error);
+        setIsLoadingCachedData(false);
+      }
+    };
+
+    loadCachedData();
+  }, [user]);
+
+  // Background refresh function
+  const refreshDataInBackground = async () => {
+    try {
+      // Refresh all data in parallel
+      await Promise.allSettled([
+        apiClient.getCompetitionHistory(),
+        apiClient.getachievementsStats(),
+        apiClient.getUserCertificates()
+      ]);
+      
+      console.log('✅ Background data refresh completed');
+    } catch (error) {
+      console.warn('⚠️ Background refresh failed (non-critical):', error);
+    }
+  };
+
   // Add this function inside the component to access competition state
   const calculateScores = () => {
     if (!competition.rounds_data || competition.rounds_data.length === 0) {
