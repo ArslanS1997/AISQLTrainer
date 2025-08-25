@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { useUpgrade } from '../contexts/UpgradeContext';
 import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
@@ -59,6 +60,7 @@ interface MasterCertificateData {
 
 export const CertificatePage: React.FC = () => {
   const { user } = useAuth();
+  const { subscription } = useSubscription();
   const { showUpgradeModal } = useUpgrade();
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -175,7 +177,7 @@ export const CertificatePage: React.FC = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
             <h4 className="font-semibold text-blue-900 mb-4 flex items-center">
               <Award className="h-5 w-5 mr-2 text-blue-600" />
-              Pro/Max Plan
+              {subscription?.plan?.name === 'free' ? 'Pro/Max Plan' : 'Max Plan'}
             </h4>
             <ul className="space-y-2 text-sm text-blue-800">
               <li>✅ Everything in Free</li>
@@ -191,10 +193,10 @@ export const CertificatePage: React.FC = () => {
         {/* Action buttons */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Button
-            onClick={() => showUpgradeModal('certificates', 'pro')}
+            onClick={() => showUpgradeModal('certificates', subscription?.plan?.name || 'free')}
             className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
           >
-            Upgrade to Pro
+            Upgrade to {subscription?.plan?.name === 'free' ? 'Pro' : 'Max'}
           </Button>
           <Button
             onClick={() => window.location.href = '/main'}
@@ -212,6 +214,24 @@ export const CertificatePage: React.FC = () => {
       </div>
     </div>
   );
+
+  // Check if user is on free plan and redirect to upgrade prompt
+  if (!loading && subscription?.plan?.name === 'free') {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-12">
+            <Trophy className="mx-auto h-16 w-16 text-yellow-500 mb-4" />
+            <h1 className="text-4xl font-bold text-gray-900">Certificates</h1>
+            <p className="mt-4 text-xl text-gray-600">
+              Upgrade to access your earned certificates
+            </p>
+          </div>
+          <UpgradePrompt />
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -270,7 +290,7 @@ export const CertificatePage: React.FC = () => {
                 </p>
                 <div className="flex space-x-4 justify-center">
                   <Button
-                    onClick={() => window.location.href = '/main'}
+                    onClick={() => window.location.href = '/practice'}
                     className="bg-blue-600 hover:bg-blue-700 px-6 py-3"
                   >
                     Start Practicing

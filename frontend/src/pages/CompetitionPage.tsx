@@ -1509,15 +1509,6 @@ export const CompetitionPage: React.FC = () => {
                 <span className="text-sm font-medium">AI Time per Question</span>
                 <span className="text-sm text-secondary-600">30 Seconds</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
-                <span className="text-sm font-medium">Competitions Remaining</span>
-                <span className="text-sm text-secondary-600">
-                  {subscription?.usage && subscription?.plan?.limits 
-                    ? `${Math.max(0, subscription.plan.limits.max_competitions_per_month - subscription.usage.competitions_entered)} / ${subscription.plan.limits.max_competitions_per_month}`
-                    : 'Loading...'
-                  }
-                </span>
-              </div>
               {hasNoCompetitionsRemaining && (
                 <>
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
