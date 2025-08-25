@@ -22,7 +22,8 @@ import {
   Zap,
   Crown,
   Table,
-  X
+  X,
+  Lock
 } from 'lucide-react';
 import { useUpgrade } from '../contexts/UpgradeContext';
 import { UpgradeModal } from '../components/UpgradeModal';
@@ -130,6 +131,7 @@ export const CompetitionPage: React.FC = () => {
   const { subscription, isPremiumUser } = useSubscription();
   const { showUpgradeModal, isModalOpen, hideUpgradeModal } = useUpgrade();
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingAIResponse, setIsGeneratingAIResponse] = useState(false); // Add this line
   const [selectedDifficulty, setSelectedDifficulty] = useState('basic');
   const [showResults, setShowResults] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -173,6 +175,10 @@ export const CompetitionPage: React.FC = () => {
   const [certificates, setCertificates] = useState<any[]>([]);
   const [isLoadingCachedData, setIsLoadingCachedData] = useState(true);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
+
+  // Check if user has no competitions remaining
+  const hasNoCompetitionsRemaining = subscription?.usage && subscription?.plan?.limits && 
+    subscription.usage.competitions_entered >= subscription.plan.limits.max_competitions_per_month;
 
   // Load cached data immediately and refresh in background
   useEffect(() => {
@@ -303,7 +309,7 @@ export const CompetitionPage: React.FC = () => {
       return;
     }
 
-    setIsLoading(true);
+    setIsLoading(true); // Show "Submitting..." on submit button
 
     try {
       // Step 1: Check human response
@@ -444,31 +450,39 @@ export const CompetitionPage: React.FC = () => {
         
       } else {
         // NOT THE FINAL ROUND - Automatically send AI response request for next question
+        // After round result is complete, switch to AI response generation
+        setIsLoading(false); // Hide "Submitting..." from submit button
+        setIsGeneratingAIResponse(true); // Show AI generation indicator elsewhere
+        
+        // Automatically send AI response request for next question
         const nextRound = competition.current_round + 1;
         console.log(`🔄 Automatically sending AI response request for next question (round ${nextRound})...`);
         
-        // Send AI response request for next round in the background
-        const aiResponse = await apiClient.getAIResponse({
-          competition_id: competition.competitionId!,
-          round: nextRound,
-          question: competition.questions[nextRound - 1]?.question || '',
-          schema_ddl: competition.schema_ddl,
-          difficulty: competition.difficulty,
-          time_limit: 30
-        });
-        
-        if (aiResponse.data) {
-          console.log(`✅ AI response request sent for round ${nextRound}`);
-          // Store the AI response
-          setCompetition(prev => ({
-            ...prev,
-            aiResponses: {
-              ...prev.aiResponses,
-              [nextRound]: aiResponse.data!.answer
-            }
-          }));
-        } else {
-          console.error(`❌ Failed to get AI response for round ${nextRound}:`, aiResponse.error);
+        try {
+          const aiResponse = await apiClient.getAIResponse({
+            competition_id: competition.competitionId!,
+            round: nextRound,
+            question: competition.questions[nextRound - 1]?.question || '',
+            schema_ddl: competition.schema_ddl,
+            difficulty: competition.difficulty,
+            time_limit: 30
+          });
+          
+          if (aiResponse.data) {
+            console.log(`✅ AI response request sent for round ${nextRound}`);
+            // Store the AI response
+            setCompetition(prev => ({
+              ...prev,
+              aiResponses: {
+                ...prev.aiResponses,
+                [nextRound]: aiResponse.data!.answer
+              }
+            }));
+          } else {
+            console.error(`❌ Failed to get AI response for round ${nextRound}:`, aiResponse.error);
+          }
+        } finally {
+          setIsGeneratingAIResponse(false); // Hide AI generation indicator
         }
       }
 
@@ -523,6 +537,13 @@ export const CompetitionPage: React.FC = () => {
 
   // Also update startCompetition to get AI response for round 1
   const startCompetition = async () => {
+    // Check if user has remaining competitions
+    if (hasNoCompetitionsRemaining) {
+      // Show upgrade modal for competitions
+      showUpgradeModal('competitions', subscription?.plan?.name || 'free');
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -586,8 +607,16 @@ export const CompetitionPage: React.FC = () => {
           console.error('Failed to get AI response for round 1:', aiResponse.error);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting competition:', error);
+      
+      // Check if the error is due to insufficient competitions
+      if (error?.response?.data?.message?.includes('competition') || 
+          error?.response?.data?.message?.includes('limit') ||
+          error?.response?.status === 403) {
+        // Show upgrade modal for competitions
+        showUpgradeModal('competitions', subscription?.plan?.name || 'free');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1480,16 +1509,58 @@ export const CompetitionPage: React.FC = () => {
                 <span className="text-sm font-medium">AI Time per Question</span>
                 <span className="text-sm text-secondary-600">30 Seconds</span>
               </div>
+              <div className="flex items-center justify-between p-3 bg-secondary-50 rounded-lg">
+                <span className="text-sm font-medium">Competitions Remaining</span>
+                <span className="text-sm text-secondary-600">
+                  {subscription?.usage && subscription?.plan?.limits 
+                    ? `${Math.max(0, subscription.plan.limits.max_competitions_per_month - subscription.usage.competitions_entered)} / ${subscription.plan.limits.max_competitions_per_month}`
+                    : 'Loading...'
+                  }
+                </span>
+              </div>
+              {hasNoCompetitionsRemaining && (
+                <>
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <Lock className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm text-orange-700">
+                        You've reached your monthly competition limit. Upgrade your plan to continue competing!
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="text-center">
+                      <h4 className="font-medium text-blue-800 mb-2">Upgrade to Continue Competing</h4>
+                      <p className="text-sm text-blue-700 mb-3">
+                        Upgrade to get more monthly competitions and premium features!
+                      </p>
+                      <Button 
+                        onClick={() => showUpgradeModal('competitions', subscription?.plan?.name || 'free')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        size="sm"
+                      >
+                        <Crown className="h-4 w-4 mr-2" />
+                        View Plans
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <Button 
-              onClick={startCompetition} 
+              onClick={hasNoCompetitionsRemaining ? () => showUpgradeModal('competitions', subscription?.plan?.name || 'free') : startCompetition}
               disabled={isLoading}
               className="w-full"
               size="lg"
             >
               {isLoading ? (
                 'Starting Competition...'
+              ) : hasNoCompetitionsRemaining ? (
+                <>
+                  <Lock className="h-5 w-5 mr-2" />
+                  Upgrade
+                </>
               ) : (
                 <>
                   <Play className="h-5 w-5 mr-2" />

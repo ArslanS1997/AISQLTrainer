@@ -18,6 +18,11 @@ import logging
 import json
 import asyncio
 from models.database import SubscriptionPlan, UserUsage
+from fastapi.responses import JSONResponse
+from fastapi_cache import FastAPICache
+from fastapi_cache.decorator import cache
+from fastapi_cache.backends.redis import RedisBackend
+from utils.cache_decorators import cache_with_key
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -189,8 +194,9 @@ async def create_checkout_session(
 
 # Fix the get_user_subscription function to only access existing attributes
 @router.get("/user-subscription")
+@cache_with_key(expire=300)  # 5 minute cache with automatic user-specific keys
 async def get_user_subscription(
-    current_user: Any = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Get user's subscription details."""
