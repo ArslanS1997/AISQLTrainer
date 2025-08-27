@@ -290,3 +290,19 @@ class SessionQuestion(Base):
         Index('idx_question_answered_at', 'answered_at'),  # Response time analytics
         Index('idx_question_session_difficulty', 'session_id', 'difficulty'),
     )
+
+class SQLChatbotQuery(Base):
+    """Simple table for SQL chatbot queries and responses."""
+    __tablename__ = "sql_chatbot_queries"
+    
+    id = Column(String(255), primary_key=True, default=generate_uuid)
+    user_id = Column(String(255), nullable=False)  # Just store the ID, no foreign key
+    query = Column(Text, nullable=False)  # User's question
+    ai_response = Column(Text, nullable=False)  # AI's response
+    created_at = Column(DateTime, default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_chatbot_query_user_id', 'user_id'),
+        Index('idx_chatbot_query_created_at', 'created_at'),
+    )

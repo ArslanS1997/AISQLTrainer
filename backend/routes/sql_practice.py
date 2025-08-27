@@ -9,7 +9,7 @@ from utils.subscription_service import SubscriptionService
 from typing import List, Dict, Any
 from utils.agents import (
     create_schema_agent, populate_table_agent, question_generator_agent, explanation_gen_agent, check_correct_agent, code_rewritter_agent
-    , redo_schema_agent
+    , redo_schema_agent, sql_helper_chatbot_agent
     )
 import asyncio
 
@@ -25,9 +25,10 @@ from routes.auth import get_db, get_model_for_user, default_lm
 from models.schemas import (
     SQLSchemaRequest, SQLSchemaResponse, SQLExecuteRequest, SQLExecuteResponse,
     SessionResponse, PopulateRequest, QuestionRequest, QuestionResponse, PopSuccess, CheckCorrectRequest, CheckCorrectResponse,
-    SessionCreationRequest
+    SessionCreationRequest, SQLHelperResponse, SQLHelperRequest
 )
 from routes.auth import get_current_user
+from models.database import SQLChatbotQuery
 
 
 router = APIRouter(prefix="/api/sql", tags=["SQL Practice"])
@@ -46,6 +47,8 @@ import threading
 # The threading.Lock ensures that access to the cache is thread-safe.
 _duckdb_conn_cache = {}
 _duckdb_conn_lock = threading.Lock()
+
+
 
 def get_duckdb_conn(user_id: str, session_id: str):
     """
@@ -72,6 +75,41 @@ def get_duckdb_conn(user_id: str, session_id: str):
         conn = duckdb.connect(database=db_filename)
         _duckdb_conn_cache[key] = conn
         return conn
+    
+
+    
+@router.post("/sql-helperbot", response_model=SQLHelperResponse)
+async def get_sql_help(request: SQLHelperRequest, db = Depends(get_db)):
+    chat_id = str(uuid.uuid4())
+    
+    # Simple fallback response for now
+    try:
+        # Try to use the agent
+        with dspy.context(lm=default_lm):
+            response = await sql_helper_chatbot_agent(user_query=request.user_query)
+            ai_response = response.reply
+    except Exception as e:
+        # Fallback response if the agent fails
+        print(f"Agent error: {str(e)}")
+        ai_response = f"LFG!  (Agent temporarily unavailable: {str(e)[:100]})"
+    
+    # Save to database
+    chatbot_query = SQLChatbotQuery(
+        id=chat_id,
+        user_id=request.user_id,
+        query=request.user_query,
+        ai_response=ai_response
+    )
+    db.add(chatbot_query)
+    db.commit()
+    
+    return SQLHelperResponse(help_id=chat_id, user_id=request.user_id, ai_response=ai_response)
+    
+
+
+    
+
+
 
 @router.post("/create-session")
 async def create_session(
@@ -497,6 +535,8 @@ async def execute_sql(
     except Exception as e:
         db.rollback()
         return SQLExecuteResponse(success=False, result='', error_message=f"execute error: {str(e)}")
+    
+
 
 
 @router.post("/populate-tables", response_model=PopSuccess)
