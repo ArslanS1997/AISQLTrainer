@@ -18,6 +18,7 @@ import { GlobalUpgradeModal } from './components/GlobalUpgradeModal';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { useSubscriptionUpdate } from './utils/useSubscriptionUpdate';
 import PaymentFailurePage from './pages/PaymentFailurePage';
+import { SQLDictionaryChatbot } from './components/SQLDictionaryChatbot';
 
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -113,6 +114,7 @@ const AppRoutes: React.FC = () => {
       </Routes>
       <Toaster position="top-right" />
       <GlobalUpgradeModal />
+      {user && <SQLDictionaryChatbot />}
     </>
   );
 };

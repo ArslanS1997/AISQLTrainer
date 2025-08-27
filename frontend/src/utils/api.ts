@@ -311,6 +311,18 @@ export interface AICompetitionResponse {
   in_time: boolean;
 }
 
+// SQL Chatbot interfaces
+export interface SQLChatbotRequest {
+  user_id: string;
+  user_query: string;
+}
+
+export interface SQLChatbotResponse {
+  help_id: string;
+  user_id: string;
+  ai_response: string;
+}
+
 // API Client
 class APIClient {
   private baseURL: string;
@@ -758,11 +770,34 @@ class APIClient {
     }
   }
 
+  
+
 
 }
 
 
+export const apiClient = new APIClient(BACKEND_URL);
 
+// SQL Chatbot API function - export this separately (OUTSIDE the class)
+export const sendChatbotMessage = async (request: SQLChatbotRequest): Promise<SQLChatbotResponse> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/sql/sql-helperbot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
 
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
-export const apiClient = new APIClient(BACKEND_URL); 
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error sending chatbot message:', error);
+    throw error;
+  }
+};
+

@@ -134,6 +134,16 @@ class SessionResponse(BaseModel):
 # ============================================================================
 # COMPETITION SCHEMAS
 # ============================================================================
+class SQLHelperResponse(BaseModel):
+    help_id: str
+    user_id: str
+    ai_response: str
+
+class SQLHelperRequest(BaseModel):
+    user_id:str
+    user_query:str
+
+
 class AICompetitionRequest(BaseModel):
     competition_id: str
     round: int

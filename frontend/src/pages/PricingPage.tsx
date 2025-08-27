@@ -4,7 +4,8 @@ import { apiClient } from '../utils/api';
 import { Button } from '../components/Button';
 import { Check, X, Star, Crown, Zap, Users } from 'lucide-react';
 
-const plans = [
+// Add export to the plans array
+export const plans = [
   {
     name: 'Free',
     price: { monthly: 0, yearly: 0 },
