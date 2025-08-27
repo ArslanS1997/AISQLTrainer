@@ -324,6 +324,7 @@ class sql_helper_chatbot(dspy.Signature):
 
     user_query = dspy.InputField(desc="The query the user is asking around DuckDB SQL syntax or concept")
     reply = dspy.OutputField(desc="An explanation of the DuckDB SQL syntax/concept with simple generic examples, without solving schema-specific problems")
+    asking_about_challenge: bool = dspy.OutputField(desc= "Is the user asking about a specific schema / question")
 
 
 
