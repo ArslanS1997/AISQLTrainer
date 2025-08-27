@@ -90,7 +90,7 @@ async def get_sql_help(request: SQLHelperRequest, db = Depends(get_db)):
             ai_response = response.reply
             asking_about_challenge = response.asking_about_challenge
             if asking_about_challenge:
-                return "I cannot answer questions for you, I can only guide you on syntax / concept"
+                ai_response= "I cannot answer questions for you, I can only guide you on syntax / concept"
     except Exception as e:
         # Fallback response if the agent fails
         print(f"Agent error: {str(e)}")
