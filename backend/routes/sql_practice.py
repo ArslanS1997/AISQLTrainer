@@ -718,3 +718,73 @@ async def complete_all_sessions(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to complete sessions: {str(e)}") 
+
+
+@router.get("/continue-last-session", response_model=dict)
+async def continue_last_session(user_id: str, db = Depends(get_db)):
+    """Continue the user's last incomplete session (only if they left it unfinished)."""
+    try:
+        # Get the user's last session (most recent)
+        last_session = db.query(DBSession).filter(
+            DBSession.user_id == user_id
+        ).order_by(DBSession.created_at.desc()).first()
+        
+        if not last_session:
+            return {
+                "success": False,
+                "message": "No session history found",
+                "has_session": False
+            }
+        
+        # Check if the last session is incomplete (left unfinished)
+        if last_session.completed_at is None:  # If NULL, session is incomplete
+            # Get session progress for display
+            total_questions = db.query(SessionQuestion).filter(
+                SessionQuestion.session_id == last_session.id
+            ).count()
+            
+            # Find the first unanswered question (where user_sql is NULL)
+            first_unanswered = db.query(SessionQuestion).filter(
+                SessionQuestion.session_id == last_session.id,
+                SessionQuestion.user_sql.is_(None)  # Find questions with no answer
+            ).order_by(SessionQuestion.question_number).first()
+            
+            if first_unanswered:
+                # Calculate progress
+                answered_questions = total_questions - db.query(SessionQuestion).filter(
+                    SessionQuestion.session_id == last_session.id,
+                    SessionQuestion.user_sql.is_(None)
+                ).count()
+                
+                return {
+                    "success": True,
+                    "message": "Incomplete session found",
+                    "has_session": True,
+                    "data": {
+                        "session_id": last_session.id,
+                        "user_id": last_session.user_id,
+                        "next_question_number": first_unanswered.question_number,
+                        "progress": {
+                            "answered": answered_questions,
+                            "total": total_questions,
+                            "percentage": round((answered_questions / total_questions * 100) if total_questions > 0 else 0, 2)
+                        },
+                        "created_at": last_session.created_at.isoformat(),
+                        "last_activity": last_session.created_at.isoformat()  # Use created_at since no updated_at
+                    }
+                }
+        
+        # If we get here, the last session was completed
+        return {
+            "success": False,
+            "message": "Last session was completed",
+            "has_session": False
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error checking session: {str(e)}",
+            "has_session": False
+        }
+

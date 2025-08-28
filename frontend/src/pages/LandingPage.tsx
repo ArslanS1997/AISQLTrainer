@@ -291,7 +291,7 @@ export const LandingPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-semibold text-secondary-900 mb-1">Timed Challenges</h3>
-                    <p className="text-secondary-600">Race against the clock in intense 60-second SQL battles</p>
+                    <p className="text-secondary-600">Race against the clock in intense SQL battles</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-4">
