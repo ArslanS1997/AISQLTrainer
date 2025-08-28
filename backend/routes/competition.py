@@ -681,6 +681,58 @@ async def submit_competition(
         questions=[str(q) for q in competition.questions] 
     )
 
+@router.get("/continue-last-competition", response_model=dict)
+async def continue_last_competition(user_id: str, db = Depends(get_db)):
+    """Continue the user's last incomplete competition (only if they left it unfinished)."""
+    try:
+        # Get the user's last ACTIVE competition (most recent)
+        last_competition = db.query(Competition).filter(
+            Competition.user_id == user_id,
+            Competition.status == 'active'  # Just check for active status
+        ).order_by(Competition.submitted_at.desc()).first()  # Use submitted_at instead of created_at
+        
+        if not last_competition:
+            return {
+                "success": False,
+                "message": "No active competition found",
+                "has_competition": False
+            }
+        
+        # Check if competition has rounds completed
+        completed_rounds = db.query(CompetitionRound).filter(
+            CompetitionRound.competition_id == last_competition.id
+        ).count()
+        
+        if completed_rounds >= 5:
+            return {
+                "success": False,
+                "message": "Last competition was completed",
+                "has_competition": False
+            }
+        
+        # Return competition data for continuation
+        return {
+            "success": True,
+            "message": "Active competition found",
+            "has_competition": True,
+            "data": {
+                "competition_id": last_competition.id,
+                "session_id": last_competition.id,  # Use competition ID as session ID
+                "status": last_competition.status,
+                "current_round": last_competition.current_round,
+                "difficulty": last_competition.difficulty,
+                "created_at": last_competition.submitted_at.isoformat(),
+                "last_activity": last_competition.submitted_at.isoformat()
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error checking competition: {str(e)}",
+            "has_competition": False
+        }
+
 
 @router.get("/history")
 async def get_competition_history(

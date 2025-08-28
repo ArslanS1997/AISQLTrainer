@@ -1376,4 +1376,124 @@ async def verify_checkout_session(session_id: str):
             "error": f"Failed to verify session: {str(e)}"
         }
 
+# Add this simple function
+@router.get("/payment-intent-status/{payment_intent_id}")
+async def handle_payment_intent(payment_intent_id: str):
+    """Simple PaymentIntent status handler that returns what the frontend needs."""
+    try:
+        # Retrieve the PaymentIntent
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        
+        print(f"🎯 PaymentIntent {payment_intent_id} status: {intent.status}")
+        
+        if intent.status == 'requires_action':
+            # The PaymentIntent requires additional steps from the customer
+            next_action = intent.next_action
+            
+            # Check if 3DS authentication is required
+            if next_action and next_action.type == 'use_stripe_sdk':
+                # The client should handle the 3DS authentication using Stripe.js or Stripe SDK
+                client_secret = intent.client_secret
+                print("🔐 Require action: notify client to authenticate using client_secret")
+                
+                # Check if this is an India user for compliance logging
+                is_india_user = False
+                if hasattr(intent, 'last_payment_error') and intent.last_payment_error:
+                    billing_country = intent.last_payment_error.get('payment_method', {}).get('billing_details', {}).get('country')
+                    card_country = intent.last_payment_error.get('payment_method', {}).get('card', {}).get('country')
+                    is_india_user = billing_country == 'IN' or card_country == 'IN'
+                
+                if is_india_user:
+                    print("🇳🇮 India user - 3DS authentication required (normal for compliance)")
+                
+                return {
+                    "requires_action": True,
+                    "payment_intent_client_secret": client_secret,
+                    "next_action": next_action.type,
+                    "is_india_user": is_india_user
+                }
+            else:
+                print("⚠️ Payment requires unsupported action:", next_action)
+                return {"error": "Unsupported next_action type", "next_action": next_action}
+        
+        elif intent.status == 'succeeded':
+            # Payment completed successfully
+            print("✅ Payment succeeded:", intent.id)
+            return {"success": True, "status": "succeeded"}
+        
+        elif intent.status == 'requires_payment_method':
+            # Payment failed, customer needs to provide new payment method
+            print("❌ Payment requires new payment method:", intent.id)
+            
+            # Check if this was an India user for compliance logging
+            is_india_user = False
+            if hasattr(intent, 'last_payment_error') and intent.last_payment_error:
+                billing_country = intent.last_payment_error.get('payment_method', {}).get('billing_details', {}).get('country')
+                card_country = intent.last_payment_error.get('payment_method', {}).get('card', {}).get('country')
+                is_india_user = billing_country == 'IN' or card_country == 'IN'
+                
+                if is_india_user:
+                    print("🇮🇳 India user payment failed - check mandate status")
+                    # Log mandate information if available
+                    mandate_options = intent.get('payment_method_options', {}).get('card', {}).get('mandate_options', {})
+                    if mandate_options.get('supported_types') == ['india']:
+                        print(f"✅ India mandate configured: {mandate_options.get('reference')}")
+            
+            return {
+                "status": "requires_payment_method",
+                "error": intent.last_payment_error.get('message', 'Payment failed') if intent.last_payment_error else 'Payment failed',
+                "is_india_user": is_india_user
+            }
+        
+        elif intent.status == 'processing':
+            # Payment is being processed
+            print("⏳ Payment processing:", intent.id)
+            return {"status": "processing"}
+        
+        elif intent.status == 'canceled':
+            # Payment was canceled
+            print("❌ Payment canceled:", intent.id)
+            return {"status": "canceled"}
+        
+        else:
+            # Other statuses
+            print("ℹ️ PaymentIntent status:", intent.status)
+            return {"status": intent.status}
+            
+    except stripe.error.StripeError as e:
+        print(f"❌ Stripe error: {e}")
+        return {"error": str(e)}
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        return {"error": "Internal server error"}
+
+@router.get("/mandate-status/{payment_intent_id}")
+async def get_mandate_status(payment_intent_id: str):
+    """Get mandate status for a PaymentIntent (useful for India compliance debugging)."""
+    try:
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        
+        # Check if this has India mandate options
+        mandate_options = intent.get('payment_method_options', {}).get('card', {}).get('mandate_options', {})
+        
+        if mandate_options.get('supported_types') == ['india']:
+            return {
+                "has_india_mandate": True,
+                "mandate_reference": mandate_options.get('reference'),
+                "amount": mandate_options.get('amount'),
+                "currency": intent.currency,
+                "interval": mandate_options.get('interval'),
+                "description": mandate_options.get('description')
+            }
+        else:
+            return {
+                "has_india_mandate": False,
+                "message": "No India mandate configured for this PaymentIntent"
+            }
+            
+    except stripe.error.StripeError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": "Internal server error"}
+
 

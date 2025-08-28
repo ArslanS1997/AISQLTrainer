@@ -32,6 +32,7 @@ import { SchemaCard } from '../components/SchemaCard';
 import { TableData, TableColumn } from '../types';
 import { Certificate } from '../components/certificate';
 import { SQLEditor } from '../components/SQLEditor';
+import { ContinueLastCompetition } from '../components/ContinueLastCompetition';
 
 // Update the CompetitionRound interface to match the API response
 interface CompetitionRound {
@@ -1459,6 +1460,9 @@ export const CompetitionPage: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
+      {/* Add this at the top */}
+      <ContinueLastCompetition />
+      
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 mb-8">
         <div className="text-center">

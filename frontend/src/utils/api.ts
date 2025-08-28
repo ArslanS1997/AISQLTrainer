@@ -323,6 +323,43 @@ export interface SQLChatbotResponse {
   ai_response: string;
 }
 
+// Continue Session interfaces
+export interface ContinueSessionData {
+  session_id: string;
+  user_id: string;
+  next_question_number: number;
+  progress: {
+    answered: number;
+    total: number;
+    percentage: number;
+  };
+  created_at: string;
+  last_activity: string;
+}
+
+export interface ContinueSessionResponse {
+  success: boolean;
+  message: string;
+  has_session: boolean;
+  data?: ContinueSessionData;
+}
+
+// Continue Competition interfaces
+export interface ContinueCompetitionData {
+  competition_id: string;
+  session_id: string;
+  status: string;
+  created_at: string;
+  last_activity: string;
+}
+
+export interface ContinueCompetitionResponse {
+  success: boolean;
+  message: string;
+  has_competition: boolean;
+  data?: ContinueCompetitionData;
+}
+
 // API Client
 class APIClient {
   private baseURL: string;
@@ -797,6 +834,89 @@ export const sendChatbotMessage = async (request: SQLChatbotRequest): Promise<SQ
     return data;
   } catch (error) {
     console.error('Error sending chatbot message:', error);
+    throw error;
+  }
+};
+
+// Continue Session API function
+export const checkIncompleteSession = async (userId: string): Promise<ContinueSessionResponse> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/sql/continue-last-session?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error checking incomplete session:', error);
+    throw error;
+  }
+};
+
+// Continue Competition API function
+export const checkIncompleteCompetition = async (userId: string): Promise<ContinueCompetitionResponse> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/competition/continue-last-competition?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error checking incomplete competition:', error);
+    throw error;
+  }
+};
+
+// Add these simple API functions
+export const checkPaymentIntentStatus = async (paymentIntentId: string): Promise<any> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/stripe/payment-intent-status/${paymentIntentId}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to check payment intent status');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error checking payment intent status:', error);
+    throw error;
+  }
+};
+
+export const getMandateStatus = async (paymentIntentId: string): Promise<any> => {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/stripe/mandate-status/${paymentIntentId}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('jwt_token')}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get mandate status');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting mandate status:', error);
     throw error;
   }
 };
