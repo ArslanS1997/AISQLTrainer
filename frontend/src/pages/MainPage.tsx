@@ -11,7 +11,6 @@ import { Database, RotateCcw, Eye, EyeOff, Award } from 'lucide-react';
 import { apiClient } from '../utils/api';
 import { Difficulty } from '../types';  // Import the shared type
 import { Certificate } from '../components/certificate'; // Use lowercase to match filename
-import { ContinueLastSession } from '../components/ContinueLastSession';
 
 
 // Add this UUID generator function at the top of the component or outside it:
@@ -520,9 +519,6 @@ const getSessionProgress = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Add this at the top */}
-      <ContinueLastSession />
-      
       {/* Add the ProgressLoader here - this will show when loading */}
       {(loadingSteps.schema || loadingSteps.populate || loadingSteps.questions) && <ProgressLoader />}
       
