@@ -734,6 +734,59 @@ async def continue_last_competition(user_id: str, db = Depends(get_db)):
         }
 
 
+@router.get("/competition/{competition_id}")
+async def get_competition_by_id(
+    competition_id: str,
+    current_user: Any = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get competition data by ID for continuation."""
+    try:
+        competition = db.query(Competition).filter(
+            Competition.id == competition_id,
+            Competition.user_id == current_user.id
+        ).first()
+        
+        if not competition:
+            raise HTTPException(status_code=404, detail="Competition not found")
+        
+        # Get completed rounds
+        rounds = db.query(CompetitionRound).filter(
+            CompetitionRound.competition_id == competition_id
+        ).all()
+        
+        return {
+            "competition_id": competition.id,
+            "difficulty": competition.difficulty,
+            "schema_ddl": competition.schema_ddl,
+            "questions": competition.questions,
+            "total_rounds": competition.total_rounds,
+            "current_round": competition.current_round,
+            "time_limit": competition.time_limit,
+            "ai_time_limit": competition.ai_time_limit,
+            "started_at": competition.started_at.isoformat(),
+            "expires_at": competition.expires_at.isoformat(),
+            "status": competition.status,
+            "rounds_data": [
+                {
+                    "round": r.round_number,
+                    "question": r.question,
+                    "user_sql": r.user_sql,
+                    "ai_sql": r.ai_sql,
+                    "user_correct": r.user_correct,
+                    "ai_correct": r.ai_correct,
+                    "user_points": r.user_points,
+                    "ai_points": r.ai_points,
+                    "correct_answer": r.correct_answer,
+                    "explanation": r.explanation
+                } for r in rounds
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading competition: {str(e)}")
+
+
 @router.get("/history")
 async def get_competition_history(
     current_user: Any = Depends(get_current_user),

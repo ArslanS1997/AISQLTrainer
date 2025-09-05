@@ -32,7 +32,6 @@ import { SchemaCard } from '../components/SchemaCard';
 import { TableData, TableColumn } from '../types';
 import { Certificate } from '../components/certificate';
 import { SQLEditor } from '../components/SQLEditor';
-import { ContinueLastCompetition } from '../components/ContinueLastCompetition';
 
 // Update the CompetitionRound interface to match the API response
 interface CompetitionRound {
@@ -424,29 +423,35 @@ export const CompetitionPage: React.FC = () => {
       // COMPLETE THE FLOW: Handle final round completion or get AI response for next question
       if (competition.current_round === 5) {
         // FINAL ROUND COMPLETED - Mark as completed automatically
-        console.log('🎯 Final round completed, marking competition as completed...');
+        console.log('🎯 Final round completed, processing final results...');
         
         // Set competition status to completed automatically
         setCompetition(prev => ({ ...prev, status: 'completed' }));
         
         // 🚀 PRE-FETCH FINAL RESULTS IMMEDIATELY FOR INSTANT LOADING
-        console.log('⚡ Pre-fetching final results for instant access...');
+        console.log('⚡ Calculating final results...');
+        
+        // You could add a more specific loading state here:
+        setIsLoading(true); // Keep the button in loading state
+        
         try {
           const finalResultsResponse = await apiClient.getCompetitionResult({
             competition_id: competition.competitionId!
           });
           
           if (finalResultsResponse.data) {
-            console.log('✅ Final results pre-fetched and cached:', finalResultsResponse.data);
+            console.log('✅ Final results calculated:', finalResultsResponse.data);
             setPrefetchedFinalResults(finalResultsResponse.data);
             
-            // Show success message to user
-            console.log('🎉 Final results are ready! Click "View Final Results" for instant access.');
+            // Show success message
+            console.log('🎉 Final results are ready!');
           } else {
-            console.warn('⚠️ Failed to pre-fetch final results:', finalResultsResponse.error);
+            console.warn('⚠️ Failed to calculate final results:', finalResultsResponse.error);
           }
         } catch (prefetchError) {
-          console.warn('⚠️ Pre-fetching final results failed (non-critical):', prefetchError);
+          console.warn('⚠️ Final results calculation failed:', prefetchError);
+        } finally {
+          setIsLoading(false); // Hide loading state
         }
         
       } else {
@@ -490,11 +495,6 @@ export const CompetitionPage: React.FC = () => {
       // Clear the current question input
       setCompetition(prev => ({ ...prev, user_query: '' }));
       
-      // Move to next round if not the final round
-      if (competition.current_round < 5) {
-        setCompetition(prev => ({ ...prev, current_round: prev.current_round + 1 }));
-      }
-
       setIsLoading(false);
       
     } catch (error) {
@@ -1460,9 +1460,6 @@ export const CompetitionPage: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      {/* Add this at the top */}
-      <ContinueLastCompetition />
-      
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-secondary-200 p-8 mb-8">
         <div className="text-center">
@@ -1702,12 +1699,18 @@ export const CompetitionPage: React.FC = () => {
                 {isLoading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Submitting...
+                    {competition.current_round === 5 
+                      ? "Processing Final Results..." 
+                      : "Submitting..."
+                    }
                   </>
                 ) : (
                   <>
                     <CheckCircle className="h-4 w-4 mr-2" />
-                    Submit Answer
+                    {competition.current_round === 5 
+                      ? "Submit Final Answer" 
+                      : "Submit Answer"
+                    }
                   </>
                 )}
               </Button>
